@@ -41,7 +41,27 @@ import * as XLSX from "xlsx"
 import Image from "next/image"
 import Link from "next/link"
 
+// Original color palette - note that #A0E82A is too similar to Jo's #a2e329
 const CHART_COLORS = ["#751FAE", "#EF3C99", "#3CBDE5", "#FF701F", "#FFA31F", "#A0E82A"];
+
+// Fixed colors for specific brokers
+const BROKER_FIXED_COLORS: Record<string, string> = {
+  "Miao (Amy)": "#3cbde5",
+  "QianShuo(Jo)": "#a2e329"
+};
+
+// Create a filtered color palette excluding colors that are fixed or too similar to fixed colors
+// Remove #3CBDE5 (Amy's color) and #A0E82A (too similar to Jo's #a2e329)
+const AVAILABLE_COLORS = ["#751FAE", "#EF3C99", "#FF701F", "#FFA31F", "#4B5563", "#EC4899"];
+
+// Global function to get broker color with fixed colors for specific brokers
+const getBrokerColor = (brokerName: string, index: number): string => {
+  if (BROKER_FIXED_COLORS[brokerName]) {
+    return BROKER_FIXED_COLORS[brokerName];
+  }
+  // Use available colors that don't conflict with fixed colors
+  return AVAILABLE_COLORS[index % AVAILABLE_COLORS.length];
+};
 
 interface Deal {
   deal_id: string; deal_name: string; broker_name: string; deal_value: number; created_time?: string | null; "Enquiry Leads": string | null; Opportunity: string | null; "1. Application": string | null; "2. Assessment": string | null; "3. Approval": string | null; "4. Loan Document": string | null; "5. Settlement Queue": string | null; "6. Settled": string | null; "2025 Settlement": string | null; "2024 Settlement": string | null; "Lost date": string | null; "lost reason": string | null; "which process (if lost)": string | null; status: string; "process days": number | null; latest_date: string | null; "new_lead?": string | null; "From Rednote?": string; "From LifeX?": string;
@@ -947,8 +967,11 @@ export function DealsDashboard() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [sortField, setSortField] = useState<SortField | null>("status");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sortColumns, setSortColumns] = useState<Array<{ field: SortField; direction: SortDirection }>>([
+    { field: "broker_name", direction: "asc" },
+    { field: "status", direction: "asc" },
+    { field: "deal_value", direction: "desc" }
+  ]);
   const [newDealsSortField, setNewDealsSortField] = useState<SortField | null>("status");
   const [newDealsSortDirection, setNewDealsSortDirection] = useState<SortDirection>("asc");
   
@@ -991,10 +1014,42 @@ export function DealsDashboard() {
     finally { setIsLoading(false) }
   }, []);
 
-  const handleSort = useCallback((field: SortField) => {
-    if (sortField === field) { if (sortDirection === "asc") setSortDirection("desc"); else if (sortDirection === "desc") { setSortDirection(null); setSortField(null) } else setSortDirection("asc") }
-    else { setSortField(field); setSortDirection("asc") }
-  }, [sortField, sortDirection]);
+  const handleSort = useCallback((field: SortField, ctrlKey: boolean = false) => {
+    setSortColumns(prevSortColumns => {
+      const existingIndex = prevSortColumns.findIndex(col => col.field === field);
+      
+      if (!ctrlKey) {
+        // Single column sorting (default behavior)
+        if (existingIndex >= 0) {
+          const existingCol = prevSortColumns[existingIndex];
+          if (existingCol.direction === "asc") {
+            return [{ field, direction: "desc" }];
+          } else {
+            return []; // Remove sorting
+          }
+        } else {
+          return [{ field, direction: "asc" }];
+        }
+      } else {
+        // Multi-column sorting (Ctrl+click)
+        if (existingIndex >= 0) {
+          const existingCol = prevSortColumns[existingIndex];
+          if (existingCol.direction === "asc") {
+            // Change to desc
+            const newSortColumns = [...prevSortColumns];
+            newSortColumns[existingIndex] = { field, direction: "desc" };
+            return newSortColumns;
+          } else {
+            // Remove this column from sorting
+            return prevSortColumns.filter((_, index) => index !== existingIndex);
+          }
+        } else {
+          // Add new column to sorting
+          return [...prevSortColumns, { field, direction: "asc" }];
+        }
+      }
+    });
+  }, []);
 
   const handleNewDealsSort = useCallback((field: SortField) => {
     if (newDealsSortField === field) { 
@@ -1011,8 +1066,15 @@ export function DealsDashboard() {
   }, [newDealsSortField, newDealsSortDirection]);
 
   const getSortIcon = useCallback((field: SortField) => {
-    if (sortField !== field) return <ArrowUpDown className="h-4 w-4" />; if (sortDirection === "asc") return <ArrowUp className="h-4 w-4" />; if (sortDirection === "desc") return <ArrowDown className="h-4 w-4" />; return <ArrowUpDown className="h-4 w-4" />
-  }, [sortField, sortDirection]);
+    const sortCol = sortColumns.find(col => col.field === field);
+    if (!sortCol) return <ArrowUpDown className="h-4 w-4" />;
+    return sortCol.direction === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />;
+  }, [sortColumns]);
+  
+  const getSortOrder = useCallback((field: SortField) => {
+    const index = sortColumns.findIndex(col => col.field === field);
+    return index >= 0 ? index + 1 : null;
+  }, [sortColumns]);
 
   const getStatusBadgeClass = (status: string) => {
     const statusClass = status.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '-');
@@ -1042,7 +1104,7 @@ export function DealsDashboard() {
         String(deal.broker_name || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === "all" || deal.status === statusFilter;
       const matchesBroker = brokerFilter === "all" || deal.broker_name === brokerFilter;
-      const matchesSource = sourceFilter === "all" || (sourceFilter === "rednote" && deal["From Rednote?"] === "Yes") || (sourceFilter === "lifex" && deal["From LifeX?"] === "Yes") || (sourceFilter === "other" && deal["From Rednote?"] === "No" && deal["From LifeX?"] === "No");
+      const matchesSource = sourceFilter === "all" || (sourceFilter === "rednote" && deal["From Rednote?"] === "Yes") || (sourceFilter === "lifex" && deal["From LifeX?"] === "Yes") || (sourceFilter === "referral" && deal["From Rednote?"] === "No" && deal["From LifeX?"] === "No");
       
       const dateToCheck = deal.latest_date || deal["6. Settled"] || deal.created_time;
       let matchesDateRange = true;
@@ -1077,47 +1139,62 @@ export function DealsDashboard() {
       return matchesSearch && matchesStatus && matchesBroker && matchesSource && matchesDateRange;
     });
 
-    if (sortField && sortDirection) {
+    if (sortColumns.length > 0) {
       filtered.sort((a, b) => {
-        let aValue: any, bValue: any;
-        switch (sortField) {
-          case "deal_name": aValue = a.deal_name || ""; bValue = b.deal_name || ""; break;
-          case "broker_name": aValue = a.broker_name || ""; bValue = b.broker_name || ""; break;
-          case "deal_value": aValue = a.deal_value || 0; bValue = b.deal_value || 0; break;
-          case "status": 
-            // Use predefined status order for sorting
-            const statusOrder = [
-              "Enquiry Leads",
-              "Opportunity", 
-              "1. Application",
-              "2. Assessment",
-              "3. Approval",
-              "4. Loan Document",
-              "5. Settlement Queue",
-              "6. Settled",
-              "Lost"
-            ];
-            const aStatus = getDealDisplayStatus(a);
-            const bStatus = getDealDisplayStatus(b);
-            aValue = statusOrder.indexOf(aStatus);
-            bValue = statusOrder.indexOf(bStatus);
-            // If status not found in order, put it at the end
-            if (aValue === -1) aValue = 999;
-            if (bValue === -1) bValue = 999;
-            break;
-          case "source": aValue = a["From Rednote?"] === "Yes" ? "RedNote" : a["From LifeX?"] === "Yes" ? "LifeX" : "Other"; bValue = b["From Rednote?"] === "Yes" ? "RedNote" : b["From LifeX?"] === "Yes" ? "LifeX" : "Other"; break;
-          case "process_days": aValue = a["process days"] || 0; bValue = b["process days"] || 0; break;
-          case "latest_date": aValue = a.latest_date ? new Date(a.latest_date).getTime() : 0; bValue = b.latest_date ? new Date(b.latest_date).getTime() : 0; break;
-          case "lost_reason": aValue = a["lost reason"] || ""; bValue = b["lost reason"] || ""; break;
-          case "lost_process": aValue = a["which process (if lost)"] || ""; bValue = b["which process (if lost)"] || ""; break;
-          default: return 0;
+        for (const sortCol of sortColumns) {
+          let aValue: any, bValue: any;
+          const { field, direction } = sortCol;
+          
+          switch (field) {
+            case "deal_name": aValue = a.deal_name || ""; bValue = b.deal_name || ""; break;
+            case "broker_name": aValue = a.broker_name || ""; bValue = b.broker_name || ""; break;
+            case "deal_value": aValue = a.deal_value || 0; bValue = b.deal_value || 0; break;
+            case "status": 
+              // Use predefined status order for sorting
+              const statusOrder = [
+                "Enquiry Leads",
+                "Opportunity", 
+                "1. Application",
+                "2. Assessment",
+                "3. Approval",
+                "4. Loan Document",
+                "5. Settlement Queue",
+                "6. Settled",
+                "Lost"
+              ];
+              const aStatus = getDealDisplayStatus(a);
+              const bStatus = getDealDisplayStatus(b);
+              aValue = statusOrder.indexOf(aStatus);
+              bValue = statusOrder.indexOf(bStatus);
+              // If status not found in order, put it at the end
+              if (aValue === -1) aValue = 999;
+              if (bValue === -1) bValue = 999;
+              break;
+            case "source": aValue = a["From Rednote?"] === "Yes" ? "RedNote" : a["From LifeX?"] === "Yes" ? "LifeX" : "Referral"; bValue = b["From Rednote?"] === "Yes" ? "RedNote" : b["From LifeX?"] === "Yes" ? "LifeX" : "Referral"; break;
+            case "process_days": aValue = a["process days"] || 0; bValue = b["process days"] || 0; break;
+            case "latest_date": aValue = a.latest_date ? new Date(a.latest_date).getTime() : 0; bValue = b.latest_date ? new Date(b.latest_date).getTime() : 0; break;
+            case "lost_reason": aValue = a["lost reason"] || ""; bValue = b["lost reason"] || ""; break;
+            case "lost_process": aValue = a["which process (if lost)"] || ""; bValue = b["which process (if lost)"] || ""; break;
+            default: continue;
+          }
+          
+          let comparison = 0;
+          if (typeof aValue === "number" && typeof bValue === "number") {
+            comparison = direction === "asc" ? aValue - bValue : bValue - aValue;
+          } else {
+            comparison = String(aValue).localeCompare(String(bValue));
+            comparison = direction === "asc" ? comparison : -comparison;
+          }
+          
+          if (comparison !== 0) {
+            return comparison;
+          }
         }
-        if (typeof aValue === "number" && typeof bValue === "number") return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
-        const comparison = String(aValue).localeCompare(String(bValue)); return sortDirection === "asc" ? comparison : -comparison;
+        return 0;
       });
     }
     return filtered;
-  }, [deals, searchTerm, statusFilter, brokerFilter, sourceFilter, startDate, endDate, sortField, sortDirection, getDealDisplayStatus]);
+  }, [deals, searchTerm, statusFilter, brokerFilter, sourceFilter, startDate, endDate, sortColumns, getDealDisplayStatus]);
 
   const stats = useMemo(() => {
     const totalDeals = filteredDeals.length;
@@ -1145,28 +1222,25 @@ export function DealsDashboard() {
   }, [deals]);
 
   const brokerDistributionData = useMemo(() => {
-    // Calculate all brokers' total deals from all time (unfiltered)
-    const allTimeBrokerStats = deals.reduce((acc, deal) => {
-      acc[deal.broker_name] = (acc[deal.broker_name] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    // Take top 10 brokers
+    const topBrokers = brokers.slice(0, 10);
     
     // Outer ring: filtered time period deals (what currently shows in brokers)
-    const outerData = brokers.slice(0, 10).map((broker, index) => ({ 
+    const outerData = topBrokers.map((broker, index) => ({ 
       label: broker.name, 
       value: broker.total, // Filtered time period deals count
-      color: CHART_COLORS[index % CHART_COLORS.length] 
+      color: getBrokerColor(broker.name, index)
     }));
     
-    // Inner ring: same broker names but showing their all-time totals
-    const innerData = brokers.slice(0, 10).map((broker, index) => ({ 
+    // Inner ring: weekly average for each broker
+    const innerData = topBrokers.map((broker, index) => ({ 
       label: broker.name, 
-      value: allTimeBrokerStats[broker.name] || 0, // All-time total
-      color: CHART_COLORS[index % CHART_COLORS.length] 
+      value: brokerWeeklyAverage[broker.name] || 0, // Weekly average
+      color: getBrokerColor(broker.name, index)
     }));
     
     return { outerData, innerData };
-  }, [brokers, deals]);
+  }, [brokers, brokerWeeklyAverage]);
 
   const statusCounts = useMemo(() => {
     const counts = filteredDeals.reduce((acc, deal) => { 
@@ -1197,8 +1271,12 @@ export function DealsDashboard() {
   const leadSourcesData = useMemo(() => {
     const rednoteCount = filteredDeals.filter((d) => d["From Rednote?"] === "Yes").length;
     const lifexCount = filteredDeals.filter((d) => d["From LifeX?"] === "Yes").length;
-    const otherCount = filteredDeals.filter((d) => d["From Rednote?"] === "No" && d["From LifeX?"] === "No").length;
-    return [{ label: "RedNote", value: rednoteCount, color: CHART_COLORS[1] }, { label: "LifeX", value: lifexCount, color: CHART_COLORS[0] }, { label: "Referral", value: otherCount, color: CHART_COLORS[2] }].filter((item) => item.value > 0);
+    const referralCount = filteredDeals.filter((d) => d["From Rednote?"] === "No" && d["From LifeX?"] === "No").length;
+    return [
+      { label: "RedNote", value: rednoteCount, color: CHART_COLORS[1] }, 
+      { label: "LifeX", value: lifexCount, color: CHART_COLORS[0] }, 
+      { label: "Referral", value: referralCount, color: "#FF701F" }
+    ].filter((item) => item.value > 0);
   }, [filteredDeals]);
 
   const newDeals = useMemo(() => {
@@ -1264,8 +1342,8 @@ export function DealsDashboard() {
             if (bValue === -1) bValue = 999;
             break;
           case "source":
-            aValue = a["From Rednote?"] === "Yes" ? "RedNote" : a["From LifeX?"] === "Yes" ? "LifeX" : "Other";
-            bValue = b["From Rednote?"] === "Yes" ? "RedNote" : b["From LifeX?"] === "Yes" ? "LifeX" : "Other";
+            aValue = a["From Rednote?"] === "Yes" ? "RedNote" : a["From LifeX?"] === "Yes" ? "LifeX" : "Referral";
+            bValue = b["From Rednote?"] === "Yes" ? "RedNote" : b["From LifeX?"] === "Yes" ? "LifeX" : "Referral";
             break;
           case "latest_date":
             aValue = a.created_time || "";
@@ -1394,13 +1472,15 @@ export function DealsDashboard() {
       return acc;
     }, {} as Record<string, number>);
 
-    return Object.entries(brokerCounts)
-      .map(([broker, count], index) => ({
-        label: broker,
-        value: count,
-        color: CHART_COLORS[index % CHART_COLORS.length],
-      }))
-      .sort((a, b) => b.value - a.value);
+    // First sort to get consistent ordering
+    const sortedBrokers = Object.entries(brokerCounts)
+      .sort((a, b) => b[1] - a[1]);
+
+    return sortedBrokers.map(([broker, count], index) => ({
+      label: broker,
+      value: count,
+      color: getBrokerColor(broker, index), // Use fixed colors for Miao (Amy) and QianShuo(Jo)
+    }));
   }, [newDeals]);
 
   const newDealsSourceDistributionByBroker = useMemo(() => {
@@ -1436,9 +1516,9 @@ export function DealsDashboard() {
     }, {} as Record<string, number>);
 
     return [
-      { label: "RED", value: sourceCounts["RED"] || 0, color: CHART_COLORS[1] },
-      { label: "LIFEX", value: sourceCounts["LIFEX"] || 0, color: CHART_COLORS[0] },
-      { label: "REFERRAL", value: sourceCounts["REFERRAL"] || 0, color: CHART_COLORS[2] },
+      { label: "RED", value: sourceCounts["RED"] || 0, color: CHART_COLORS[1] }, // Pink
+      { label: "LIFEX", value: sourceCounts["LIFEX"] || 0, color: CHART_COLORS[0] }, // Purple
+      { label: "REFERRAL", value: sourceCounts["REFERRAL"] || 0, color: "#FF701F" }, // Orange - same as Lead Sources
     ].filter(item => item.value > 0);
   }, [newDeals]);
 
@@ -1456,22 +1536,38 @@ export function DealsDashboard() {
       sourceBrokerCounts[source][brokerName] = (sourceBrokerCounts[source][brokerName] || 0) + 1;
     });
 
+    // Create a broker order map based on newDealsBrokerDistribution
+    const brokerOrderMap: Record<string, number> = {};
+    newDealsBrokerDistribution.forEach((broker, index) => {
+      brokerOrderMap[broker.label] = index;
+    });
+
     const result: Record<string, Array<{ label: string; value: number; color: string }>> = {};
     Object.entries(sourceBrokerCounts).forEach(([source, brokerCounts]) => {
-      // Find the color of the source from the main distribution
-      const sourceColor = newDealsAllSourcesDistribution.find(item => item.label === source)?.color || CHART_COLORS[0];
+      // Sort brokers using the same order as newDealsBrokerDistribution
+      const sortedBrokers = Object.entries(brokerCounts)
+        .sort((a, b) => {
+          const orderA = brokerOrderMap[a[0]] ?? 999;
+          const orderB = brokerOrderMap[b[0]] ?? 999;
+          return orderA - orderB;
+        });
       
-      result[source] = Object.entries(brokerCounts)
-        .map(([brokerName, count]) => ({
+      result[source] = sortedBrokers.map(([brokerName, count]) => {
+        // Find the index from the main broker distribution
+        const brokerIndex = brokerOrderMap[brokerName] ?? 0;
+        const baseColor = getBrokerColor(brokerName, brokerIndex);
+        // Add 30% transparency (70% opacity) to the color
+        const colorWithOpacity = baseColor + "B3"; // B3 is hex for 70% opacity (179/255)
+        return {
           label: brokerName,
           value: count,
-          color: sourceColor, // Use the same color as the parent source
-        }))
-        .sort((a, b) => b.value - a.value);
+          color: colorWithOpacity,
+        };
+      });
     });
 
     return result;
-  }, [newDeals, newDealsAllSourcesDistribution]);
+  }, [newDeals, newDealsAllSourcesDistribution, newDealsBrokerDistribution]);
 
   const newDealsStatusDistribution = useMemo(() => {
     const statusCounts = newDeals.reduce((acc, deal) => {
@@ -1940,6 +2036,14 @@ export function DealsDashboard() {
                       <Search className="h-5 w-5" />
                       All Deals ({filteredDeals.length} total)
                     </CardTitle>
+                    <p className="text-sm text-violet/70 mt-2">
+                      💡 Click column headers to sort. Hold Ctrl/Cmd + click to sort by multiple columns.
+                      {sortColumns.length > 0 && (
+                        <span className="ml-2 text-purple-600 font-medium">
+                          Currently sorting by {sortColumns.length} column{sortColumns.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </p>
                     <div className="flex gap-4 pt-4">
                       <Input 
                         placeholder="Search by deal or broker..." 
@@ -1975,7 +2079,7 @@ export function DealsDashboard() {
                           <SelectItem value="all">All Sources</SelectItem>
                           <SelectItem value="rednote">RedNote</SelectItem>
                           <SelectItem value="lifex">LifeX</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
+                          <SelectItem value="referral">Referral</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1986,38 +2090,101 @@ export function DealsDashboard() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("deal_name")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("deal_name", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Deal Name {getSortIcon("deal_name")}
+                                {getSortOrder("deal_name") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("deal_name")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("broker_name")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("broker_name", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Broker {getSortIcon("broker_name")}
+                                {getSortOrder("broker_name") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("broker_name")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("deal_value")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("deal_value", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Value {getSortIcon("deal_value")}
+                                {getSortOrder("deal_value") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("deal_value")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("status")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("status", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Status {getSortIcon("status")}
+                                {getSortOrder("status") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("status")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("source")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("source", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Source {getSortIcon("source")}
+                                {getSortOrder("source") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("source")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("process_days")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("process_days", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Process Days {getSortIcon("process_days")}
+                                {getSortOrder("process_days") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("process_days")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                             <TableHead>
-                              <Button variant="ghost" onClick={() => handleSort("latest_date")}>
+                              <Button 
+                                variant="ghost" 
+                                onClick={(e) => handleSort("latest_date", e.ctrlKey || e.metaKey)}
+                                className="relative"
+                              >
                                 Latest Update {getSortIcon("latest_date")}
+                                {getSortOrder("latest_date") && (
+                                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                    {getSortOrder("latest_date")}
+                                  </span>
+                                )}
                               </Button>
                             </TableHead>
                           </TableRow>
@@ -2042,7 +2209,7 @@ export function DealsDashboard() {
                                 </TableCell>
                                 <TableCell className="text-deep-purple-text">
                                   {deal["From Rednote?"] === "Yes" ? "RedNote" : 
-                                   deal["From LifeX?"] === "Yes" ? "LifeX" : "Other"}
+                                   deal["From LifeX?"] === "Yes" ? "LifeX" : "Referral"}
                                 </TableCell>
                                 <TableCell className="text-deep-purple-text">
                                   {deal["process days"]}
@@ -2207,7 +2374,7 @@ export function DealsDashboard() {
                             </TableCell>
                             <TableCell className="text-deep-purple-text">
                               {deal["From Rednote?"] === "Yes" ? "RedNote" : 
-                               deal["From LifeX?"] === "Yes" ? "LifeX" : "Other"}
+                               deal["From LifeX?"] === "Yes" ? "LifeX" : "Referral"}
                             </TableCell>
                             <TableCell className="text-deep-purple-text">
                               {deal.created_time ? new Date(deal.created_time).toLocaleDateString() : "N/A"}

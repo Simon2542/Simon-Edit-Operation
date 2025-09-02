@@ -154,7 +154,7 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
 
   // Calculate settled deals details for a specific week
   const getWeekSettledDetails = useMemo(() => {
-    const weeklyGroups = filteredDeals.reduce((acc, deal) => {
+    const weeklyGroups = allDeals.reduce((acc, deal) => {
       const dateKey = deal.latest_date || deal["6. Settled"] || deal.created_time;
       if (dateKey) {
         try {
@@ -195,9 +195,9 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
     });
 
     return result;
-  }, [filteredDeals]);
+  }, [allDeals]);
   const weeklyData = useMemo((): WeeklyStat[] => {
-    const stats = calculateWeeklyStats(filteredDeals);
+    const stats = calculateWeeklyStats(allDeals);
     
     const sortedByDateAsc = stats.sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
 
@@ -228,7 +228,7 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
 
     return withChange.sort((a, b) => new Date(b.week).getTime() - new Date(a.week).getTime());
 
-  }, [filteredDeals]);
+  }, [allDeals]);
 
   const averages = useMemo((): Omit<WeeklyStat, 'week'> | null => {
     const allWeeklyStats = calculateWeeklyStats(allDeals);
