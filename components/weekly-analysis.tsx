@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { ChartComment } from "@/components/chart-comment"
-import { ArrowUp, ArrowDown, TrendingUp, Users, DollarSign, FileText } from "lucide-react"
+import { ArrowUp, ArrowDown, TrendingUp, Users, DollarSign, FileText, RotateCcw } from "lucide-react"
 
 // Assuming the Deal interface is defined elsewhere and imported
 // For standalone development, let's define it here.
@@ -151,10 +152,14 @@ const calculateWeeklyStats = (deals: Deal[]): WeeklyStat[] => {
 
 
 export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Deal[], allDeals: Deal[] }) {
+  const [showAllData, setShowAllData] = useState(false);
+
+  // Use allDeals when showAllData is true, otherwise use filteredDeals
+  const dataToUse = showAllData ? allDeals : filteredDeals;
 
   // Calculate settled deals details for a specific week
   const getWeekSettledDetails = useMemo(() => {
-    const weeklyGroups = allDeals.reduce((acc, deal) => {
+    const weeklyGroups = dataToUse.reduce((acc, deal) => {
       const dateKey = deal.latest_date || deal["6. Settled"] || deal.created_time;
       if (dateKey) {
         try {
@@ -195,9 +200,9 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
     });
 
     return result;
-  }, [allDeals]);
+  }, [dataToUse]);
   const weeklyData = useMemo((): WeeklyStat[] => {
-    const stats = calculateWeeklyStats(allDeals);
+    const stats = calculateWeeklyStats(dataToUse);
     
     const sortedByDateAsc = stats.sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
 
@@ -228,7 +233,7 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
 
     return withChange.sort((a, b) => new Date(b.week).getTime() - new Date(a.week).getTime());
 
-  }, [allDeals]);
+  }, [dataToUse]);
 
   const averages = useMemo((): Omit<WeeklyStat, 'week'> | null => {
     const allWeeklyStats = calculateWeeklyStats(allDeals);
@@ -256,10 +261,30 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
     <div className="space-y-6 mt-4">
       <Card className="bg-white/60 border-violet/20 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-violet">Weekly Performance Analysis</CardTitle>
-          <CardDescription className="text-violet/80">
-            A weekly breakdown of key performance metrics. Weekly cards are based on filters. The average is based on all data.
-          </CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-violet">Weekly Performance Analysis</CardTitle>
+              <CardDescription className="text-violet/80">
+                A weekly breakdown of key performance metrics. {showAllData ? 'Showing all data (filters cleared).' : 'Weekly cards are based on filters.'} The average is based on all data.
+              </CardDescription>
+            </div>
+            <Button
+              variant={showAllData ? "default" : "outline"}
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                const currentScrollY = window.scrollY;
+                setShowAllData(!showAllData);
+                // Restore scroll position after state update
+                setTimeout(() => {
+                  window.scrollTo(0, currentScrollY);
+                }, 0);
+              }}
+            >
+              <RotateCcw className="h-4 w-4" />
+              {showAllData ? 'Apply Filters' : 'Clear Filters'}
+            </Button>
+          </div>
         </CardHeader>
       </Card>
 

@@ -596,6 +596,18 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [selectedLostReason, setSelectedLostReason] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (showLostDeals) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showLostDeals]);
+
   const formatCurrency = (value: number) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
   const handleSort = (field: string) => { if (sortField === field) setSortDirection(sortDirection === "asc" ? "desc" : "asc"); else { setSortField(field); setSortDirection("asc") } };
   const getSortIcon = (field: string) => { if (sortField !== field) return <ArrowUpDown className="h-3 w-3" />; return sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> };
