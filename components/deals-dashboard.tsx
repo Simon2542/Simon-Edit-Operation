@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useMemo, useCallback, useEffect } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -26,7 +27,7 @@ import {
   Home,
   Maximize,
   Minimize,
-  BarChart3,
+  Info,
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -39,7 +40,6 @@ import { useFullscreen } from "@/hooks/use-fullscreen"
 import { LoadingAnimation } from "@/components/loading-animation"
 import * as XLSX from "xlsx"
 import Image from "next/image"
-import Link from "next/link"
 
 // Original color palette - note that #A0E82A is too similar to Jo's #a2e329
 const CHART_COLORS = ["#751FAE", "#EF3C99", "#3CBDE5", "#FF701F", "#FFA31F", "#A0E82A"];
@@ -592,8 +592,7 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [showLostDeals, setShowLostDeals] = useState(false);
-  const [sortField, setSortField] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortColumns, setSortColumns] = useState<Array<{ field: string; direction: "asc" | "desc" }>>([]);
   const [selectedLostReason, setSelectedLostReason] = useState<string | null>(null);
 
   useEffect(() => {
@@ -609,8 +608,55 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
   }, [showLostDeals]);
 
   const formatCurrency = (value: number) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-  const handleSort = (field: string) => { if (sortField === field) setSortDirection(sortDirection === "asc" ? "desc" : "asc"); else { setSortField(field); setSortDirection("asc") } };
-  const getSortIcon = (field: string) => { if (sortField !== field) return <ArrowUpDown className="h-3 w-3" />; return sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> };
+  const handleSort = (field: string, ctrlKey: boolean = false) => {
+    setSortColumns(prevSortColumns => {
+      const existingIndex = prevSortColumns.findIndex(col => col.field === field);
+      
+      if (!ctrlKey) {
+        // Single column sorting (default behavior)
+        if (existingIndex >= 0) {
+          const existingCol = prevSortColumns[existingIndex];
+          if (existingCol.direction === "asc") {
+            return [{ field, direction: "desc" }];
+          } else {
+            return []; // Remove sorting
+          }
+        } else {
+          return [{ field, direction: "asc" }];
+        }
+      } else {
+        // Multi-column sorting (Ctrl+click)
+        if (existingIndex >= 0) {
+          const existingCol = prevSortColumns[existingIndex];
+          if (existingCol.direction === "asc") {
+            // Change to desc
+            const newColumns = [...prevSortColumns];
+            newColumns[existingIndex] = { field, direction: "desc" };
+            return newColumns;
+          } else {
+            // Remove this column from sorting
+            return prevSortColumns.filter((_, index) => index !== existingIndex);
+          }
+        } else {
+          // Add new sort column
+          return [...prevSortColumns, { field, direction: "asc" }];
+        }
+      }
+    });
+  };
+  
+  const getSortIcon = (field: string) => {
+    const sortColumn = sortColumns.find(col => col.field === field);
+    if (!sortColumn) return <ArrowUpDown className="h-3 w-3" />;
+    const sortIndex = sortColumns.findIndex(col => col.field === field);
+    const sortNumber = sortColumns.length > 1 ? <span className="text-[10px] ml-1">{sortIndex + 1}</span> : null;
+    return (
+      <span className="inline-flex items-center">
+        {sortColumn.direction === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+        {sortNumber}
+      </span>
+    );
+  };
 
   const sankeyData = useMemo(() => {
     const stages = ["Enquiry Leads", "Opportunity", "1. Application", "2. Assessment", "3. Approval", "4. Loan Document", "5. Settlement Queue", "6. Settled"];
@@ -818,8 +864,6 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
     return (
       <div className="w-full overflow-x-auto relative h-[55vh]">
         <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" className="border rounded-lg bg-white/70">
-          <defs><pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M 50 0 L 0 0 0 50" fill="none" stroke="#e0e0e0" strokeWidth="1" /></pattern></defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
           {Array.from(linksBySource.entries()).flatMap(([source, targets]) => {
             const sourcePos = nodePositions.get(source); 
             if (!sourcePos) return [];
@@ -880,13 +924,19 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
             <rect x="0" y="0" width="200" height="65" fill="white" stroke="#ddd" rx="5" opacity="0.9" />
             <text x="10" y="20" className="text-sm font-semibold fill-deep-purple-text">Legend</text>
             <rect x="10" y="30" width="15" height="8" fill="#751FAE" /><text x="30" y="38" className="text-xs fill-deep-purple-text">Normal Flow</text>
-            <rect x="10" y="45" width="15" height="8" fill="#9CA3AF" /><text x="30" y="53" className="text-xs fill-deep-purple-text">Lost Flow (hover for reasons, click for details)</text>
+            <rect x="10" y="45" width="15" height="8" fill="#9CA3AF" /><text x="30" y="53" className="text-xs fill-deep-purple-text">Lost Flow (click for details)</text>
           </g>
         </svg>
         {showLostDeals && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-[95vw] h-[90vh] mx-4 overflow-hidden resize text-deep-purple-text" style={{ minWidth: "800px", minHeight: "600px" }}>
-              <div className="flex items-center justify-between p-6 border-b"><h2 className="text-xl font-semibold">Lost Deals Details</h2><button onClick={() => { setShowLostDeals(false); setSelectedLostReason(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">×</button></div>
+              <div className="flex items-center justify-between p-6 border-b">
+                <div>
+                  <h2 className="text-xl font-semibold">Lost Deals Details</h2>
+                  <p className="text-sm text-gray-500 mt-1">Hold Ctrl/Cmd and click headers to sort by multiple columns</p>
+                </div>
+                <button onClick={() => { setShowLostDeals(false); setSelectedLostReason(null); setSortColumns([]); }} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+              </div>
               <div className="p-6 overflow-y-auto h-[calc(90vh-120px)]">
                 <div className="grid gap-6 lg:grid-cols-4">
                   <div className="lg:col-span-1">
@@ -919,29 +969,39 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
                     <div className="mb-4 text-sm text-deep-purple-text/80">Total Lost Deals: {deals.filter((d) => d.status === "Lost").length}</div>
                     <div className="rounded-md border overflow-x-auto">
                       <Table><TableHeader><TableRow>
-                        <TableHead className="min-w-[150px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("deal_name")}>Deal Name{getSortIcon("deal_name")}</Button></TableHead>
-                        <TableHead className="min-w-[120px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("broker_name")}>Broker{getSortIcon("broker_name")}</Button></TableHead>
-                        <TableHead className="min-w-[100px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("deal_value")}>Value{getSortIcon("deal_value")}</Button></TableHead>
-                        <TableHead className="min-w-[150px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("lost_reason")}>Lost Reason{getSortIcon("lost_reason")}</Button></TableHead>
-                        <TableHead className="min-w-[120px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("lost_process")}>Lost Process{getSortIcon("lost_process")}</Button></TableHead>
-                        <TableHead className="min-w-[100px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("lost_date")}>Lost Date{getSortIcon("lost_date")}</Button></TableHead>
-                        <TableHead className="min-w-[100px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={() => handleSort("process_days")}>Process Days{getSortIcon("process_days")}</Button></TableHead>
+                        <TableHead className="min-w-[150px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("deal_name", e.ctrlKey || e.metaKey)}>Deal Name{getSortIcon("deal_name")}</Button></TableHead>
+                        <TableHead className="min-w-[120px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("broker_name", e.ctrlKey || e.metaKey)}>Broker{getSortIcon("broker_name")}</Button></TableHead>
+                        <TableHead className="min-w-[100px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("deal_value", e.ctrlKey || e.metaKey)}>Value{getSortIcon("deal_value")}</Button></TableHead>
+                        <TableHead className="min-w-[150px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("lost_reason", e.ctrlKey || e.metaKey)}>Lost Reason{getSortIcon("lost_reason")}</Button></TableHead>
+                        <TableHead className="min-w-[120px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("lost_process", e.ctrlKey || e.metaKey)}>Lost Process{getSortIcon("lost_process")}</Button></TableHead>
+                        <TableHead className="min-w-[100px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("lost_date", e.ctrlKey || e.metaKey)}>Lost Date{getSortIcon("lost_date")}</Button></TableHead>
+                        <TableHead className="min-w-[100px]"><Button variant="ghost" className="h-auto p-0 font-semibold text-xs" onClick={(e) => handleSort("process_days", e.ctrlKey || e.metaKey)}>Process Days{getSortIcon("process_days")}</Button></TableHead>
                       </TableRow></TableHeader>
                         <TableBody>
                           {deals.filter((d) => d.status === "Lost" && (!selectedLostReason || d["lost reason"] === selectedLostReason)).sort((a, b) => {
-                            if (!sortField) return 0; let aValue: any, bValue: any;
-                            switch (sortField) {
-                              case "deal_name": aValue = a.deal_name || ""; bValue = b.deal_name || ""; break;
-                              case "broker_name": aValue = a.broker_name || ""; bValue = b.broker_name || ""; break;
-                              case "deal_value": aValue = a.deal_value || 0; bValue = b.deal_value || 0; break;
-                              case "lost_reason": aValue = a["lost reason"] || ""; bValue = b["lost reason"] || ""; break;
-                              case "lost_process": aValue = a["which process (if lost)"] || ""; bValue = b["which process (if lost)"] || ""; break;
-                              case "lost_date": aValue = a["Lost date"] ? new Date(a["Lost date"]).getTime() : 0; bValue = b["Lost date"] ? new Date(b["Lost date"]).getTime() : 0; break;
-                              case "process_days": aValue = a["process days"] || 0; bValue = b["process days"] || 0; break;
-                              default: return 0;
+                            for (const sortColumn of sortColumns) {
+                              let aValue: any, bValue: any;
+                              switch (sortColumn.field) {
+                                case "deal_name": aValue = a.deal_name || ""; bValue = b.deal_name || ""; break;
+                                case "broker_name": aValue = a.broker_name || ""; bValue = b.broker_name || ""; break;
+                                case "deal_value": aValue = a.deal_value || 0; bValue = b.deal_value || 0; break;
+                                case "lost_reason": aValue = a["lost reason"] || ""; bValue = b["lost reason"] || ""; break;
+                                case "lost_process": aValue = a["which process (if lost)"] || ""; bValue = b["which process (if lost)"] || ""; break;
+                                case "lost_date": aValue = a["Lost date"] ? new Date(a["Lost date"]).getTime() : 0; bValue = b["Lost date"] ? new Date(b["Lost date"]).getTime() : 0; break;
+                                case "process_days": aValue = a["process days"] || 0; bValue = b["process days"] || 0; break;
+                                default: continue;
+                              }
+                              let comparison: number;
+                              if (typeof aValue === "number" && typeof bValue === "number") {
+                                comparison = aValue - bValue;
+                              } else {
+                                comparison = String(aValue).localeCompare(String(bValue));
+                              }
+                              if (comparison !== 0) {
+                                return sortColumn.direction === "asc" ? comparison : -comparison;
+                              }
                             }
-                            if (typeof aValue === "number" && typeof bValue === "number") return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
-                            const comparison = String(aValue).localeCompare(String(bValue)); return sortDirection === "asc" ? comparison : -comparison;
+                            return 0;
                           }).map((deal) => (
                             <TableRow key={deal.deal_id}><TableCell className="font-medium text-sm text-deep-purple-text">{deal.deal_name}</TableCell>
                               <TableCell className="text-sm text-deep-purple-text/90">{deal.broker_name}</TableCell>
@@ -1772,15 +1832,15 @@ export function DealsDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/marketing">
+          <Link href="/other-information">
             <Button
               variant="outline"
               size="sm"
               className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all duration-300 shadow-sm hover:shadow-lg backdrop-blur-sm"
-              title="营销仪表板"
+              title="Other Information"
             >
-              <BarChart3 className="h-4 w-4 mr-2" />
-              营销
+              <Info className="h-4 w-4 mr-2" />
+              Other Information
             </Button>
           </Link>
           {isSupported && (
@@ -2027,17 +2087,21 @@ export function DealsDashboard() {
                 <CardDescription className="text-gray-600 font-medium">A summary of all deals based on the current filters.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  <div className="lg:col-span-1">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div className="flex flex-col">
                     <h3 className="font-semibold mb-2 text-center text-lg text-violet">Lead Sources</h3>
                     <p className="text-center text-sm text-violet/70 mb-4">Total: {leadSourcesData.reduce((sum, item) => sum + item.value, 0)} deals</p>
-                    <PieChart data={leadSourcesData} size={250} />
+                    <div className="flex-grow flex items-center justify-center">
+                      <PieChart data={leadSourcesData} size={350} />
+                    </div>
                     <ChartComment chartId="lead-sources" chartTitle="Lead Sources" />
                   </div>
-                  <div className="lg:col-span-2">
+                  <div className="flex flex-col">
                     <h3 className="font-semibold mb-2 text-center text-lg text-violet">Broker Distribution</h3>
                     <p className="text-center text-sm text-violet/70 mb-4">Total: {brokerDistributionData.outerData.reduce((sum, item) => sum + item.value, 0)} deals</p>
-                    <DoubleRingPieChart outerData={brokerDistributionData.outerData} innerData={brokerDistributionData.innerData} size={350} />
+                    <div className="flex-grow flex items-center justify-center">
+                      <DoubleRingPieChart outerData={brokerDistributionData.outerData} innerData={brokerDistributionData.innerData} size={350} />
+                    </div>
                     <ChartComment chartId="broker-distribution" chartTitle="Broker Distribution" />
                   </div>
                 </div>
