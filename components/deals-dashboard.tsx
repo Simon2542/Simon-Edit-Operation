@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 
 import { useState, useMemo, useCallback, useEffect } from "react"
 import Link from "next/link"
@@ -32,7 +32,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { CalendarIcon } from "lucide-react"
+import { CalendarIcon, ChevronUp, ChevronDown } from "lucide-react"
 import { format } from "date-fns"
 import { WeeklyAnalysis } from "@/components/weekly-analysis"
 import { ChartComment } from "@/components/chart-comment"
@@ -385,7 +385,7 @@ function InteractiveTreemap({ deals, width = 800, height = 500 }: { deals: Deal[
   );
 }
 
-function PieChart({ data = [], size = 200, legendTextColor = "text-deep-purple-text", onLegendClick, selectedLabel }: { data?: Array<{ label: string; value: number; color: string }>; size?: number; legendTextColor?: string; onLegendClick?: (label: string) => void; selectedLabel?: string | null }) {
+function PieChart({ data = [], size = 200, legendTextColor = "text-deep-purple-text", onLegendClick, selectedLabel }: { data?: Array<{ label: string; value: number; color: string; conversionRate?: string; settleRate?: string }>; size?: number; legendTextColor?: string; onLegendClick?: (label: string) => void; selectedLabel?: string | null }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (total === 0) return <div className="flex items-center justify-center" style={{ width: size, height: size }}><span className="text-deep-purple-text/70">No data</span></div>;
   let cumulativePercentage = 0;
@@ -416,7 +416,14 @@ function PieChart({ data = [], size = 200, legendTextColor = "text-deep-purple-t
         {data.map((item, index) => (
           <div key={index} onClick={() => onLegendClick && onLegendClick(item.label)} className={`flex items-center gap-2 text-sm cursor-pointer p-1 rounded-md transition-colors duration-150 ${selectedLabel === item.label ? 'bg-white/20' : 'bg-transparent hover:bg-white/10'}`}>
             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-            <span className={legendTextColor}>{item.label}: {item.value} ({((item.value / total) * 100).toFixed(1)}%)</span>
+            <div className="flex flex-col">
+              <span className={legendTextColor}>{item.label}: {item.value} ({((item.value / total) * 100).toFixed(1)}%)</span>
+              {item.conversionRate && item.settleRate && (
+                <span className={`text-xs ${legendTextColor} opacity-70`}>
+                  Conv: {item.conversionRate}% | Settle: {item.settleRate}%
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -566,7 +573,7 @@ function DoubleRingPieChart({ outerData = [], innerData = [], size = 300 }: { ou
       </svg>
       <div className="grid grid-cols-2 gap-6 text-sm">
         <div>
-          <h4 className="font-semibold mb-2 text-deep-purple-text">Outer Ring - Total Deals</h4>
+          <h4 className="font-semibold mb-2 text-deep-purple-text">Outer Ring - Filtered Period</h4>
           {outerData.length > 0 ? outerData.map((item, index) => (
             <div key={index} className="flex items-center gap-2 mb-1">
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
@@ -585,6 +592,94 @@ function DoubleRingPieChart({ outerData = [], innerData = [], size = 300 }: { ou
         </div>
       </div>
     </div>
+  );
+}
+
+function BrokerPerformanceTable({ brokers }: { brokers: Array<{ 
+  name: string; 
+  total: number; 
+  settled: number; 
+  value: number; 
+  converted: number;
+  conversionRate: string;
+  settledRate: string; 
+  sourceBreakdown?: Array<{
+    source: string;
+    total: number;
+    converted: number;
+    conversionRate: string;
+    settled: number;
+    settledRate: string;
+    value: number;
+  }> 
+}> }) {
+  const [showSourceBreakdown, setShowSourceBreakdown] = useState(false);
+
+  const formatCurrency = (value: number) => new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+
+  return (
+    <Card className="bg-white/60 border-violet/20 shadow-sm mt-4">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-violet">Broker Performance</CardTitle>
+            <CardDescription className="text-violet/80">
+              Performance metrics for each broker. Total brokers: {brokers.length}, 
+              Total deals: {brokers.reduce((sum, broker) => sum + broker.total, 0)}
+            </CardDescription>
+          </div>
+          <Button
+            variant={showSourceBreakdown ? "outline" : "default"}
+            size="sm"
+            onClick={() => setShowSourceBreakdown(!showSourceBreakdown)}
+            className="ml-4"
+          >
+            {showSourceBreakdown ? "Source Breakdown" : "Total"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Broker</TableHead>
+              <TableHead>Total Deals</TableHead>
+              <TableHead>Converted Deals</TableHead>
+              <TableHead>Conversion Rate</TableHead>
+              <TableHead>Settled Deals</TableHead>
+              <TableHead>Settled Rate</TableHead>
+              <TableHead>Total Value Settled</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {brokers.map((broker) => (
+              <React.Fragment key={broker.name}>
+                <TableRow className="font-medium">
+                  <TableCell className="font-bold text-deep-purple-text">{broker.name}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.total}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.converted}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.conversionRate}%</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.settled}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.settledRate}%</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{formatCurrency(broker.value)}</TableCell>
+                </TableRow>
+                {showSourceBreakdown && broker.sourceBreakdown && broker.sourceBreakdown.map((source) => (
+                  <TableRow key={`${broker.name}-${source.source}`} className="bg-gray-50/50">
+                    <TableCell className="pl-8 text-sm text-deep-purple-text/80">{source.source}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.total}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.converted}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.conversionRate}%</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.settled}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.settledRate}%</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{formatCurrency(source.value)}</TableCell>
+                  </TableRow>
+                ))}
+              </React.Fragment>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1281,8 +1376,83 @@ export function DealsDashboard() {
   }, [filteredDeals]);
 
   const brokers = useMemo(() => {
-    const brokerStats = filteredDeals.reduce((acc, deal) => { if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0 }; acc[deal.broker_name].total++; if (deal["6. Settled"] && deal["6. Settled"].trim() !== "") { acc[deal.broker_name].settled++; acc[deal.broker_name].value += deal.deal_value || 0 } return acc }, {} as Record<string, { total: number; settled: number; value: number }>);
-    return Object.entries(brokerStats).map(([name, stats]) => ({ name, ...stats, settledRate: stats.total > 0 ? ((stats.settled / stats.total) * 100).toFixed(1) : "0" })).sort((a, b) => b.value - a.value);
+    const brokerStats = filteredDeals.reduce((acc, deal) => { 
+      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0 }; 
+      acc[deal.broker_name].total++; 
+      
+      // Check if deal is converted (has entered any processing stage)
+      const isConverted = (deal["1. Application"] && deal["1. Application"].trim() !== "") ||
+        (deal["2. Assessment"] && deal["2. Assessment"].trim() !== "") ||
+        (deal["3. Approval"] && deal["3. Approval"].trim() !== "") ||
+        (deal["4. Loan Document"] && deal["4. Loan Document"].trim() !== "") ||
+        (deal["5. Settlement Queue"] && deal["5. Settlement Queue"].trim() !== "") ||
+        (deal["6. Settled"] && deal["6. Settled"].trim() !== "") ||
+        (deal["2025 Settlement"] && deal["2025 Settlement"].trim() !== "") ||
+        (deal["2024 Settlement"] && deal["2024 Settlement"].trim() !== "");
+      
+      if (isConverted) {
+        acc[deal.broker_name].converted++;
+      }
+      
+      if (deal["6. Settled"] && deal["6. Settled"].trim() !== "") { 
+        acc[deal.broker_name].settled++; 
+        acc[deal.broker_name].value += deal.deal_value || 0;
+      } 
+      return acc;
+    }, {} as Record<string, { total: number; settled: number; value: number; converted: number }>);
+    
+    return Object.entries(brokerStats).map(([name, stats]) => {
+      // Calculate source breakdown for this broker
+      const brokerDeals = filteredDeals.filter(deal => deal.broker_name === name);
+      
+      const sourceBreakdown = [
+        {
+          source: "RedNote",
+          deals: brokerDeals.filter(d => d["From Rednote?"] === "Yes")
+        },
+        {
+          source: "LifeX",
+          deals: brokerDeals.filter(d => d["From LifeX?"] === "Yes")
+        },
+        {
+          source: "Referral",
+          deals: brokerDeals.filter(d => d["From Rednote?"] === "No" && d["From LifeX?"] === "No")
+        }
+      ].map(sourceData => {
+        const total = sourceData.deals.length;
+        const settled = sourceData.deals.filter(d => d["6. Settled"] && d["6. Settled"].trim() !== "").length;
+        const converted = sourceData.deals.filter(d => 
+          (d["1. Application"] && d["1. Application"].trim() !== "") ||
+          (d["2. Assessment"] && d["2. Assessment"].trim() !== "") ||
+          (d["3. Approval"] && d["3. Approval"].trim() !== "") ||
+          (d["4. Loan Document"] && d["4. Loan Document"].trim() !== "") ||
+          (d["5. Settlement Queue"] && d["5. Settlement Queue"].trim() !== "") ||
+          (d["6. Settled"] && d["6. Settled"].trim() !== "") ||
+          (d["2025 Settlement"] && d["2025 Settlement"].trim() !== "") ||
+          (d["2024 Settlement"] && d["2024 Settlement"].trim() !== "")
+        ).length;
+        const value = sourceData.deals.filter(d => d["6. Settled"] && d["6. Settled"].trim() !== "")
+          .reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
+        
+        return {
+          source: sourceData.source,
+          total,
+          converted,
+          conversionRate: total > 0 ? ((converted / total) * 100).toFixed(1) : "0",
+          settled,
+          settledRate: total > 0 ? ((settled / total) * 100).toFixed(1) : "0",
+          value
+        };
+      }).filter(s => s.total > 0); // Only include sources with deals
+      
+      return { 
+        name, 
+        ...stats, 
+        conversionRate: stats.total > 0 ? ((stats.converted / stats.total) * 100).toFixed(1) : "0",
+        settledRate: stats.total > 0 ? ((stats.settled / stats.total) * 100).toFixed(1) : "0",
+        sourceBreakdown
+      };
+    }).sort((a, b) => b.value - a.value);
   }, [filteredDeals]);
 
   const brokerWeeklyAverage = useMemo(() => {
@@ -1341,14 +1511,53 @@ export function DealsDashboard() {
   }, [filteredDeals, getDealDisplayStatus]);
 
   const leadSourcesData = useMemo(() => {
-    const rednoteCount = filteredDeals.filter((d) => d["From Rednote?"] === "Yes").length;
-    const lifexCount = filteredDeals.filter((d) => d["From LifeX?"] === "Yes").length;
-    const referralCount = filteredDeals.filter((d) => d["From Rednote?"] === "No" && d["From LifeX?"] === "No").length;
-    return [
-      { label: "RedNote", value: rednoteCount, color: CHART_COLORS[1] }, 
-      { label: "LifeX", value: lifexCount, color: CHART_COLORS[0] }, 
-      { label: "Referral", value: referralCount, color: "#FF701F" }
-    ].filter((item) => item.value > 0);
+    // Calculate data for each source
+    const sources = [
+      {
+        label: "RedNote",
+        deals: filteredDeals.filter((d) => d["From Rednote?"] === "Yes"),
+        color: CHART_COLORS[1]
+      },
+      {
+        label: "LifeX", 
+        deals: filteredDeals.filter((d) => d["From LifeX?"] === "Yes"),
+        color: CHART_COLORS[0]
+      },
+      {
+        label: "Referral",
+        deals: filteredDeals.filter((d) => d["From Rednote?"] === "No" && d["From LifeX?"] === "No"),
+        color: "#FF701F"
+      }
+    ];
+
+    return sources.map(source => {
+      const totalCount = source.deals.length;
+      const settledCount = source.deals.filter(d => d["6. Settled"] && d["6. Settled"].trim() !== "").length;
+      const convertedCount = source.deals.filter(d => 
+        (d["1. Application"] && d["1. Application"].trim() !== "") ||
+        (d["2. Assessment"] && d["2. Assessment"].trim() !== "") ||
+        (d["3. Approval"] && d["3. Approval"].trim() !== "") ||
+        (d["4. Loan Document"] && d["4. Loan Document"].trim() !== "") ||
+        (d["5. Settlement Queue"] && d["5. Settlement Queue"].trim() !== "") ||
+        (d["6. Settled"] && d["6. Settled"].trim() !== "") ||
+        (d["2025 Settlement"] && d["2025 Settlement"].trim() !== "") ||
+        (d["2024 Settlement"] && d["2024 Settlement"].trim() !== "")
+      ).length;
+      
+      const conversionRate = totalCount > 0 ? ((convertedCount / totalCount) * 100).toFixed(1) : "0";
+      const settleRate = totalCount > 0 ? ((settledCount / totalCount) * 100).toFixed(1) : "0";
+      
+      return {
+        label: source.label,
+        value: totalCount,
+        color: source.color,
+        conversionRate,
+        settleRate,
+        convertedCount,
+        settledCount
+      };
+    }).filter((item) => item.value > 0)
+     .sort((a, b) => b.value - a.value);
   }, [filteredDeals]);
 
   const newDeals = useMemo(() => {
@@ -2471,36 +2680,7 @@ export function DealsDashboard() {
             </Card>
           </TabsContent>
           <TabsContent value="brokers">
-            <Card className="bg-white/60 border-violet/20 shadow-sm mt-4">
-              <CardHeader>
-                <CardTitle className="text-violet">Broker Performance</CardTitle>
-                <CardDescription className="text-violet/80">Performance metrics for each broker. Total brokers: {brokers.length}, Total deals: {brokers.reduce((sum, broker) => sum + broker.total, 0)}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Broker</TableHead>
-                      <TableHead>Total Deals</TableHead>
-                      <TableHead>Settled Deals</TableHead>
-                      <TableHead>Settled Rate</TableHead>
-                      <TableHead>Total Value Settled</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {brokers.map((broker) => (
-                      <TableRow key={broker.name}>
-                        <TableCell className="font-medium text-deep-purple-text">{broker.name}</TableCell>
-                        <TableCell className="text-deep-purple-text">{broker.total}</TableCell>
-                        <TableCell className="text-deep-purple-text">{broker.settled}</TableCell>
-                        <TableCell className="text-deep-purple-text">{broker.settledRate}%</TableCell>
-                        <TableCell className="text-deep-purple-text">{formatCurrency(broker.value)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+            <BrokerPerformanceTable brokers={brokers} />
             <Card className="bg-white/60 border-violet/20 shadow-sm mt-4">
               <CardHeader>
                 <CardTitle className="text-violet">Settlement Analysis</CardTitle>
