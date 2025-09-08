@@ -31,6 +31,17 @@ const blogPosts: BlogPost[] = [
     icon: <TrendingUp className="h-6 w-6" />,
     href: "/other-information/lead-sources-analysis",
     tags: ["Analytics", "Lead Generation", "ROI"]
+  },
+  {
+    id: "2",
+    title: "Broker Performance Analysis",
+    description: "In-depth analysis of individual broker performance, including settlement rates, conversion metrics, and deal volume trends.",
+    date: "2025-01-09",
+    author: "Analytics Team",
+    readTime: "7 min read",
+    icon: <BarChart className="h-6 w-6" />,
+    href: "/other-information/broker-performance-analysis",
+    tags: ["Brokers", "Performance", "Metrics"]
   }
 ]
 
@@ -87,9 +98,6 @@ export default function OtherInformationPage() {
                     <div className="p-3 bg-gradient-to-br from-violet/20 to-pink-200/40 rounded-lg text-violet group-hover:scale-110 transition-transform">
                       {post.icon}
                     </div>
-                    <Badge className="bg-violet/10 text-violet border-violet/20">
-                      {post.tags[0]}
-                    </Badge>
                   </div>
                   <CardTitle className="text-xl font-bold text-gray-900 group-hover:text-violet transition-colors">
                     {post.title}

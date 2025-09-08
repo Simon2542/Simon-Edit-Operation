@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChartComment } from "@/components/chart-comment"
-import { ArrowUp, ArrowDown, TrendingUp, Users, DollarSign, FileText, RotateCcw } from "lucide-react"
+import { ArrowUp, ArrowDown, TrendingUp, Users, DollarSign, FileText, RotateCcw, Calendar } from "lucide-react"
 
 // Assuming the Deal interface is defined elsewhere and imported
 // For standalone development, let's define it here.
@@ -153,6 +154,7 @@ const calculateWeeklyStats = (deals: Deal[]): WeeklyStat[] => {
 
 export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Deal[], allDeals: Deal[] }) {
   const [showAllData, setShowAllData] = useState(false);
+  const [selectedYear, setSelectedYear] = useState<string>("all");
 
   // Use allDeals when showAllData is true, otherwise use filteredDeals
   const dataToUse = showAllData ? allDeals : filteredDeals;
@@ -235,8 +237,37 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
 
   }, [dataToUse]);
 
+  // Get available years from all deals
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    allDeals.forEach(deal => {
+      const dateKey = deal.latest_date || deal["6. Settled"] || deal.created_time;
+      if (dateKey) {
+        try {
+          const year = new Date(dateKey).getFullYear().toString();
+          years.add(year);
+        } catch (e) {
+          // Skip invalid dates
+        }
+      }
+    });
+    return Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
+  }, [allDeals]);
+
   const averages = useMemo((): Omit<WeeklyStat, 'week'> | null => {
-    const allWeeklyStats = calculateWeeklyStats(allDeals);
+    // Filter allDeals by selected year if a specific year is chosen
+    const dealsToUse = selectedYear === "all" ? allDeals : allDeals.filter(deal => {
+      const dateKey = deal.latest_date || deal["6. Settled"] || deal.created_time;
+      if (!dateKey) return false;
+      try {
+        const dealYear = new Date(dateKey).getFullYear().toString();
+        return dealYear === selectedYear;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    const allWeeklyStats = calculateWeeklyStats(dealsToUse);
     if (allWeeklyStats.length === 0) {
       return null;
     }
@@ -255,7 +286,7 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
       settledRate: sum.settledRate / totalWeeks,
       conversionRate: sum.conversionRate / totalWeeks,
     };
-  }, [allDeals]);
+  }, [allDeals, selectedYear]);
 
   return (
     <div className="space-y-6 mt-4">
@@ -293,13 +324,30 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
           {averages && (
             <Card className="bg-white/80 border-violet/40 shadow-lg ring-2 ring-violet/15">
               <CardHeader className="bg-gradient-to-r from-violet/5 to-hot-pink/5 rounded-t-lg">
-                <CardTitle className="text-violet font-bold text-xl flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-hot-pink" />
-                  Overall Weekly Average (All Time)
-                </CardTitle>
-                <CardDescription className="text-violet/80 font-medium">
-                  Baseline performance metrics across all historical data
-                </CardDescription>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-violet font-bold text-xl flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-hot-pink" />
+                      Overall Weekly Average ({selectedYear === "all" ? "All Time" : selectedYear})
+                    </CardTitle>
+                    <CardDescription className="text-violet/80 font-medium">
+                      Baseline performance metrics {selectedYear === "all" ? "across all historical data" : `for ${selectedYear}`}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedYear} onValueChange={setSelectedYear}>
+                      <SelectTrigger className="w-32 h-8 text-xs bg-white text-black">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        {availableYears.map(year => (
+                          <SelectItem key={year} value={year}>{year}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/50">
                 <MetricDisplay title="Avg. Total Deals" value={averages.totalDeals.toFixed(1)} icon={FileText} />

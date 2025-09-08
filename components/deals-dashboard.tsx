@@ -1264,6 +1264,49 @@ export function DealsDashboard() {
       return latestStage || deal.status || "Unknown";
   };
 
+  // Filtered deals for KPI cards (without source filter)
+  const filteredDealsForKPI = useMemo(() => {
+    return deals.filter((deal) => {
+      const matchesSearch = 
+        String(deal.deal_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+        String(deal.broker_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === "all" || deal.status === statusFilter;
+      const matchesBroker = brokerFilter === "all" || deal.broker_name === brokerFilter;
+      // NOTE: No source filter applied here for KPI cards
+      
+      const dateToCheck = deal.latest_date || deal["6. Settled"] || deal.created_time;
+      let matchesDateRange = true;
+      if (startDate || endDate) {
+        if (!dateToCheck) {
+            matchesDateRange = false;
+        } else {
+            const dealDateRaw = new Date(dateToCheck);
+            if (isNaN(dealDateRaw.getTime())) {
+                matchesDateRange = false;
+            } else {
+                const year = String(dealDateRaw.getFullYear());
+                const month = String(dealDateRaw.getMonth() + 1).padStart(2, '0');
+                const day = String(dealDateRaw.getDate()).padStart(2, '0');
+                const dealDateStr = `${year}-${month}-${day}`; // 获取 YYYY-MM-DD 格式
+
+                if (startDate) {
+                    if (dealDateStr < startDate) {
+                        matchesDateRange = false;
+                    }
+                }
+                if (endDate && matchesDateRange) {
+                    if (dealDateStr > endDate) {
+                        matchesDateRange = false;
+                    }
+                }
+            }
+        }
+      }
+
+      return matchesSearch && matchesStatus && matchesBroker && matchesDateRange;
+    });
+  }, [deals, searchTerm, statusFilter, brokerFilter, startDate, endDate]);
+
   const filteredDeals = useMemo(() => {
     const filtered = deals.filter((deal) => {
       const matchesSearch = 
@@ -1364,16 +1407,16 @@ export function DealsDashboard() {
   }, [deals, searchTerm, statusFilter, brokerFilter, sourceFilter, startDate, endDate, sortColumns, getDealDisplayStatus]);
 
   const stats = useMemo(() => {
-    const totalDeals = filteredDeals.length;
-    const settledCount = filteredDeals.filter((d) => d["6. Settled"] && d["6. Settled"].trim() !== "").length;
+    const totalDeals = filteredDealsForKPI.length;
+    const settledCount = filteredDealsForKPI.filter((d) => d["6. Settled"] && d["6. Settled"].trim() !== "").length;
     const settledRate = totalDeals > 0 ? ((settledCount / totalDeals) * 100).toFixed(1) : "0";
-    const convertedCount = filteredDeals.filter((d) => (d["1. Application"] && d["1. Application"].trim() !== "") || (d["2. Assessment"] && d["2. Assessment"].trim() !== "") || (d["3. Approval"] && d["3. Approval"].trim() !== "") || (d["4. Loan Document"] && d["4. Loan Document"].trim() !== "") || (d["5. Settlement Queue"] && d["5. Settlement Queue"].trim() !== "") || (d["6. Settled"] && d["6. Settled"].trim() !== "") || (d["2025 Settlement"] && d["2025 Settlement"].trim() !== "") || (d["2024 Settlement"] && d["2024 Settlement"].trim() !== "")).length;
+    const convertedCount = filteredDealsForKPI.filter((d) => (d["1. Application"] && d["1. Application"].trim() !== "") || (d["2. Assessment"] && d["2. Assessment"].trim() !== "") || (d["3. Approval"] && d["3. Approval"].trim() !== "") || (d["4. Loan Document"] && d["4. Loan Document"].trim() !== "") || (d["5. Settlement Queue"] && d["5. Settlement Queue"].trim() !== "") || (d["6. Settled"] && d["6. Settled"].trim() !== "") || (d["2025 Settlement"] && d["2025 Settlement"].trim() !== "") || (d["2024 Settlement"] && d["2024 Settlement"].trim() !== "")).length;
     const conversionRate = totalDeals > 0 ? ((convertedCount / totalDeals) * 100).toFixed(1) : "0";
-    const lostDeals = filteredDeals.filter((d) => d.status === "Lost").length;
-    const totalValue = filteredDeals.reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
-    const settledValue = filteredDeals.filter((d) => d["6. Settled"] && d["6. Settled"].trim() !== "").reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
+    const lostDeals = filteredDealsForKPI.filter((d) => d.status === "Lost").length;
+    const totalValue = filteredDealsForKPI.reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
+    const settledValue = filteredDealsForKPI.filter((d) => d["6. Settled"] && d["6. Settled"].trim() !== "").reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
     return { totalDeals, settledCount, settledRate, convertedCount, conversionRate, lostDeals, totalValue, settledValue };
-  }, [filteredDeals]);
+  }, [filteredDealsForKPI]);
 
   const brokers = useMemo(() => {
     const brokerStats = filteredDeals.reduce((acc, deal) => { 
@@ -2046,10 +2089,10 @@ export function DealsDashboard() {
               variant="outline"
               size="sm"
               className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all duration-300 shadow-sm hover:shadow-lg backdrop-blur-sm"
-              title="Other Information"
+              title="Information Hub"
             >
               <Info className="h-4 w-4 mr-2" />
-              Other Information
+              Information Hub
             </Button>
           </Link>
           {isSupported && (
@@ -2199,7 +2242,7 @@ export function DealsDashboard() {
               </div>
               <p className="text-xs text-gray-600 font-semibold">
                 {stats.settledCount} settled, {stats.lostDeals} lost
-                {(searchTerm || statusFilter !== "all" || brokerFilter !== "all" || sourceFilter !== "all" || startDate || endDate) && " (filtered)"}
+                {(searchTerm || statusFilter !== "all" || brokerFilter !== "all" || startDate || endDate) && " (filtered)"}
               </p>
             </CardContent>
           </Card>
@@ -2296,11 +2339,11 @@ export function DealsDashboard() {
                 <CardDescription className="text-gray-600 font-medium">A summary of all deals based on the current filters.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
+                <div className="grid gap-6 md:grid-cols-2 items-stretch">
                   <div className="flex flex-col">
                     <h3 className="font-semibold mb-2 text-center text-lg text-violet">Lead Sources</h3>
                     <p className="text-center text-sm text-violet/70 mb-4">Total: {leadSourcesData.reduce((sum, item) => sum + item.value, 0)} deals</p>
-                    <div className="flex-grow flex items-center justify-center">
+                    <div className="flex-grow flex items-center justify-center min-h-[350px]">
                       <PieChart data={leadSourcesData} size={350} />
                     </div>
                     <ChartComment chartId="lead-sources" chartTitle="Lead Sources" />
@@ -2308,7 +2351,7 @@ export function DealsDashboard() {
                   <div className="flex flex-col">
                     <h3 className="font-semibold mb-2 text-center text-lg text-violet">Broker Distribution</h3>
                     <p className="text-center text-sm text-violet/70 mb-4">Total: {brokerDistributionData.outerData.reduce((sum, item) => sum + item.value, 0)} deals</p>
-                    <div className="flex-grow flex items-center justify-center">
+                    <div className="flex-grow flex items-center justify-center min-h-[350px]">
                       <DoubleRingPieChart outerData={brokerDistributionData.outerData} innerData={brokerDistributionData.innerData} size={350} />
                     </div>
                     <ChartComment chartId="broker-distribution" chartTitle="Broker Distribution" />
