@@ -2695,8 +2695,23 @@ export function DealsDashboard() {
           <TabsContent value="pipeline">
             <Card className="bg-white/60 border-violet/20 shadow-sm mt-4">
               <CardHeader>
-                <CardTitle className="text-violet">Deal Pipeline Flow</CardTitle>
-                <CardDescription className="text-violet/80">Visualize the deal flow from lead to settlement or loss. Total deals: {filteredDeals.length}</CardDescription>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-violet">Deal Pipeline Flow</CardTitle>
+                    <CardDescription className="text-violet/80">Visualize the deal flow from lead to settlement or loss. Total deals: {filteredDeals.length}</CardDescription>
+                  </div>
+                  <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                    <SelectTrigger className="w-[180px] bg-violet/10 border-violet/30 text-deep-purple-text">
+                      <SelectValue placeholder="Filter by source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Sources</SelectItem>
+                      <SelectItem value="rednote">RedNote</SelectItem>
+                      <SelectItem value="lifex">LifeX</SelectItem>
+                      <SelectItem value="referral">Referral</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardHeader>
               <CardContent>
                 <SankeyDiagram deals={filteredDeals} startDate={startDate} endDate={endDate} />

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, TrendingUp, Users, DollarSign, Target, Award, Activity, LineChart } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Deal {
   deal_id: string
@@ -31,6 +32,7 @@ export default function LeadSourcesAnalysisPage() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedYear, setSelectedYear] = useState<string>("all")
 
   // Load deals data
   useEffect(() => {
@@ -101,8 +103,16 @@ export default function LeadSourcesAnalysisPage() {
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!deals.length) return []
 
+    // Filter deals by selected year
+    const filteredDeals = selectedYear === "all" 
+      ? deals 
+      : deals.filter(deal => {
+          const dealYear = new Date(deal.created_date).getFullYear().toString()
+          return dealYear === selectedYear
+        })
+
     // Group settled deals by date
-    const settledByDate = deals
+    const settledByDate = filteredDeals
       .filter(deal => deal.status === "6. Settled")
       .reduce((acc, deal) => {
         const date = deal.created_date
@@ -111,7 +121,7 @@ export default function LeadSourcesAnalysisPage() {
       }, {} as Record<string, number>)
 
     // Group Rednote deals by date (any status)
-    const rednoteByDate = deals
+    const rednoteByDate = filteredDeals
       .filter(deal => deal["From Rednote?"] === "Yes")
       .reduce((acc, deal) => {
         const date = deal.created_date
@@ -134,6 +144,17 @@ export default function LeadSourcesAnalysisPage() {
 
     // Filter to only include dates with at least one non-null value
     return result.filter(d => d.settledDeals30DayAvg !== null || d.rednoteDeals30DayAvg !== null)
+  }, [deals, selectedYear])
+
+  // Get available years from deals data
+  const availableYears = useMemo(() => {
+    const years = new Set<string>()
+    deals.forEach(deal => {
+      if (deal.created_date) {
+        years.add(new Date(deal.created_date).getFullYear().toString())
+      }
+    })
+    return Array.from(years).sort().reverse()
   }, [deals])
 
   // Format date for display (dd/mm/yyyy format)
@@ -163,19 +184,17 @@ export default function LeadSourcesAnalysisPage() {
       </div>
 
       {/* Header */}
-      <header className="relative z-50 p-6 flex justify-between items-center sticky top-0 bg-white/95 backdrop-blur-xl border-b border-violet/20 shadow-lg">
-        <div className="flex items-center gap-4">
-          <Link href="/other-information">
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Information Hub
-            </Button>
-          </Link>
-        </div>
+      <header className="relative z-50 p-6 sticky top-0 bg-white/95 backdrop-blur-xl border-b border-violet/20 shadow-lg">
+        <Link href="/other-information" className="absolute left-6 top-1/2 transform -translate-y-1/2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Information Hub
+          </Button>
+        </Link>
         
         <div className="text-center">
           <h1 className="text-3xl font-black bg-gradient-to-r from-purple-700 via-pink-600 to-purple-700 bg-clip-text text-transparent">
@@ -185,8 +204,6 @@ export default function LeadSourcesAnalysisPage() {
             Comprehensive Lead Generation Insights
           </p>
         </div>
-
-        <div className="w-48"></div>
       </header>
 
       {/* Main Content */}
@@ -194,13 +211,30 @@ export default function LeadSourcesAnalysisPage() {
         {/* 30-Day Rolling Average Chart */}
         <Card className="mb-8 bg-white/90 backdrop-blur border-violet/20">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LineChart className="h-5 w-5 text-violet" />
-              Lead Sources Analysis - 30-Day Rolling Average
-            </CardTitle>
-            <CardDescription>
-              Settled deals vs Rednote source deals - 30-day rolling averages (30 days before, 0 after)
-            </CardDescription>
+            <div className="flex items-start justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-black">
+                  <LineChart className="h-5 w-5 text-violet" />
+                  Lead Sources Analysis - 30-Day Rolling Average
+                </CardTitle>
+                <CardDescription>
+                  Settled deals vs Rednote source deals - 30-day rolling averages (30 days before, 0 after)
+                </CardDescription>
+              </div>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Filter by year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {availableYears.map(year => (
+                    <SelectItem key={year} value={year}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
