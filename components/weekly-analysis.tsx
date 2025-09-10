@@ -154,7 +154,7 @@ const calculateWeeklyStats = (deals: Deal[]): WeeklyStat[] => {
 
 export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Deal[], allDeals: Deal[] }) {
   const [showAllData, setShowAllData] = useState(false);
-  const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedYear, setSelectedYear] = useState<string>("2025");
 
   // Use allDeals when showAllData is true, otherwise use filteredDeals
   const dataToUse = showAllData ? allDeals : filteredDeals;
@@ -351,9 +351,9 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
               </CardHeader>
               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white/50">
                 <MetricDisplay title="Avg. Total Deals" value={averages.totalDeals.toFixed(1)} icon={FileText} />
-                <MetricDisplay title="Avg. Settled Value" value={formatCurrency(averages.settledValue)} icon={DollarSign} isCurrency />
-                <MetricDisplay title="Avg. Settled Rate" value={`${averages.settledRate.toFixed(1)}%`} icon={TrendingUp} isRate />
                 <MetricDisplay title="Avg. Conversion Rate" value={`${averages.conversionRate.toFixed(1)}%`} icon={Users} isRate />
+                <MetricDisplay title="Avg. Settled Rate" value={`${averages.settledRate.toFixed(1)}%`} icon={TrendingUp} isRate />
+                <MetricDisplay title="Avg. Settled Value" value={formatCurrency(averages.settledValue)} icon={DollarSign} isCurrency />
               </CardContent>
             </Card>
           )}
@@ -369,7 +369,7 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <MetricDisplay title="Total Deals" value={stat.totalDeals.toString()} change={stat.totalDealsChange} icon={FileText} />
-                    <MetricDisplay title="Settled Value" value={formatCurrency(stat.settledValue)} change={stat.settledValueChange} icon={DollarSign} isCurrency />
+                    <MetricDisplay title="Conversion Rate" value={`${stat.conversionRate.toFixed(1)}%`} change={stat.conversionRateChange} icon={Users} isRate />
                     <MetricDisplay 
                       title="Settled Rate" 
                       value={`${stat.settledRate.toFixed(1)}%`} 
@@ -377,7 +377,7 @@ export function WeeklyAnalysis({ filteredDeals, allDeals }: { filteredDeals: Dea
                       icon={TrendingUp} 
                       isRate 
                     />
-                    <MetricDisplay title="Conversion Rate" value={`${stat.conversionRate.toFixed(1)}%`} change={stat.conversionRateChange} icon={Users} isRate />
+                    <MetricDisplay title="Settled Value" value={formatCurrency(stat.settledValue)} change={stat.settledValueChange} icon={DollarSign} isCurrency />
                     
                     {/* Always show settled deals breakdown when available */}
                     {weekDetails && weekDetails.totalSettled > 0 && (

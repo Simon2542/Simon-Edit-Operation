@@ -8,7 +8,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, TrendingUp, TrendingDown, Target, Users, DollarSign, FileText, AlertTriangle, Upload } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Slider } from "@/components/ui/slider"
+import { ArrowLeft, TrendingUp, TrendingDown, Target, Users, DollarSign, FileText, AlertTriangle, Upload, Filter, BarChart3 } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LabelList } from "recharts"
 import * as XLSX from "xlsx"
 
 interface Deal {
@@ -58,22 +62,26 @@ const formatCurrency = (value: number) => new Intl.NumberFormat("en-AU", {
 
 export default function BrokerPerformanceAnalysisPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [settledRateThreshold, setSettledRateThreshold] = useState<number>(20);
-  const [conversionRateThreshold, setConversionRateThreshold] = useState<number>(50);
   const [minDealsThreshold, setMinDealsThreshold] = useState<number>(5);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Filter states
+  const [selectedMode, setSelectedMode] = useState<'settled' | 'conversion'>('settled');
+  const [selectedBroker, setSelectedBroker] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [threshold, setThreshold] = useState<number>(20);
 
-  // Load deals from localStorage on component mount
+  // Load deals from sessionStorage on component mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const savedDeals = localStorage.getItem('dashboard-deals');
+        const savedDeals = sessionStorage.getItem('dashboard-deals-data');
         if (savedDeals) {
           setDeals(JSON.parse(savedDeals));
         }
       } catch (error) {
-        console.error('Error loading deals from localStorage:', error);
+        console.error('Error loading deals from sessionStorage:', error);
       }
     }
   }, []);
@@ -104,9 +112,9 @@ export default function BrokerPerformanceAnalysisPage() {
         setDeals(dealsArray);
         setError(null);
         
-        // Save to localStorage
+        // Save to sessionStorage
         if (typeof window !== 'undefined') {
-          localStorage.setItem('dashboard-deals', JSON.stringify(dealsArray));
+          sessionStorage.setItem('dashboard-deals-data', JSON.stringify(dealsArray));
         }
         
       } else if (fileExtension === "xlsx" || fileExtension === "xls") {
@@ -147,9 +155,9 @@ export default function BrokerPerformanceAnalysisPage() {
         setDeals(dealsArray);
         setError(null);
         
-        // Save to localStorage
+        // Save to sessionStorage
         if (typeof window !== 'undefined') {
-          localStorage.setItem('dashboard-deals', JSON.stringify(dealsArray));
+          sessionStorage.setItem('dashboard-deals-data', JSON.stringify(dealsArray));
         }
         
       } else {
@@ -159,9 +167,9 @@ export default function BrokerPerformanceAnalysisPage() {
       setError(err instanceof Error ? err.message : "Failed to parse file");
       setDeals([]);
       
-      // Clear localStorage on error
+      // Clear sessionStorage on error
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('dashboard-deals');
+        sessionStorage.removeItem('dashboard-deals-data');
       }
     } finally {
       setIsLoading(false);
@@ -170,10 +178,48 @@ export default function BrokerPerformanceAnalysisPage() {
     }
   }, []);
 
-  const brokerPerformance = useMemo((): BrokerPerformance[] => {
-    if (!deals || deals.length === 0) return [];
+  // Get available years from latest_date
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    deals.forEach(deal => {
+      if (deal.latest_date) {
+        const year = new Date(deal.latest_date).getFullYear().toString();
+        if (!isNaN(parseInt(year))) {
+          years.add(year);
+        }
+      }
+    });
+    return Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
+  }, [deals]);
 
-    const brokerStats = deals.reduce((acc, deal) => {
+  // Fixed broker list - only Amy and Jo
+  const availableBrokers = ['Miao (Amy)', 'QianShuo(Jo)'];
+
+  // Filter deals based on criteria
+  const filteredDeals = useMemo(() => {
+    let filtered = deals;
+
+    // Filter by broker
+    if (selectedBroker !== 'all') {
+      filtered = filtered.filter(deal => deal.broker_name === selectedBroker);
+    }
+
+    // Filter by year (using latest_date)
+    if (selectedYear !== 'all') {
+      filtered = filtered.filter(deal => {
+        if (!deal.latest_date) return false;
+        const year = new Date(deal.latest_date).getFullYear().toString();
+        return year === selectedYear;
+      });
+    }
+
+    return filtered;
+  }, [deals, selectedBroker, selectedYear]);
+
+  const brokerPerformance = useMemo((): BrokerPerformance[] => {
+    if (!filteredDeals || filteredDeals.length === 0) return [];
+
+    const brokerStats = filteredDeals.reduce((acc, deal) => {
       const brokerName = deal.broker_name;
       if (!acc[brokerName]) {
         acc[brokerName] = {
@@ -227,37 +273,188 @@ export default function BrokerPerformanceAnalysisPage() {
         conversionRate,
         convertedDeals: stats.converted
       };
-    }).sort((a, b) => b.settledValue - a.settledValue);
-  }, [deals]);
+    }).sort((a, b) => selectedMode === 'settled' ? b.settledValue - a.settledValue : b.conversionRate - a.conversionRate);
+  }, [filteredDeals, selectedMode]);
 
   const filteredBrokers = useMemo(() => {
     return brokerPerformance.filter(broker => broker.totalDeals >= minDealsThreshold);
   }, [brokerPerformance, minDealsThreshold]);
 
   const performanceSummary = useMemo(() => {
-    const aboveSettledThreshold = filteredBrokers.filter(b => b.settledRate >= settledRateThreshold).length;
-    const aboveConversionThreshold = filteredBrokers.filter(b => b.conversionRate >= conversionRateThreshold).length;
-    const totalBrokers = filteredBrokers.length;
+    // Find the selected broker's performance
+    const selectedBrokerData = brokerPerformance.find(b => b.brokerName === selectedBroker);
+    
+    // Calculate selected broker's rate based on analysis mode
+    const selectedBrokerRate = selectedBrokerData 
+      ? (selectedMode === 'settled' ? selectedBrokerData.settledRate : selectedBrokerData.conversionRate)
+      : 0;
+    
+    // Calculate average deals per 7 days for selected broker
+    let avgDealsPerWeek = 0;
+    if (selectedBroker !== 'all' && filteredDeals.length > 0) {
+      const brokerDeals = filteredDeals.filter(deal => deal.broker_name === selectedBroker);
+      
+      if (brokerDeals.length > 0) {
+        // Get date range from filtered deals
+        const dates = brokerDeals
+          .filter(deal => deal.latest_date)
+          .map(deal => new Date(deal.latest_date!).getTime())
+          .filter(time => !isNaN(time));
+        
+        if (dates.length > 0) {
+          const minDate = Math.min(...dates);
+          const maxDate = Math.max(...dates);
+          const totalDays = Math.max(1, (maxDate - minDate) / (1000 * 60 * 60 * 24));
+          const totalWeeks = Math.max(1, totalDays / 7);
+          avgDealsPerWeek = brokerDeals.length / totalWeeks;
+        }
+      }
+    }
     
     return {
-      aboveSettledThreshold,
-      aboveConversionThreshold,
-      totalBrokers,
-      avgSettledRate: totalBrokers > 0 ? filteredBrokers.reduce((sum, b) => sum + b.settledRate, 0) / totalBrokers : 0,
-      avgConversionRate: totalBrokers > 0 ? filteredBrokers.reduce((sum, b) => sum + b.conversionRate, 0) / totalBrokers : 0
+      selectedBrokerRate,
+      avgDealsPerWeek
     };
-  }, [filteredBrokers, settledRateThreshold, conversionRateThreshold]);
+  }, [brokerPerformance, selectedBroker, selectedMode, filteredDeals]);
+
+  // Chart data calculation - weekly performance comparison
+  const chartData = useMemo(() => {
+    if (selectedBroker === 'all' || filteredDeals.length === 0) {
+      return [];
+    }
+
+    const brokerDeals = filteredDeals.filter(deal => deal.broker_name === selectedBroker);
+    
+    if (brokerDeals.length === 0) {
+      return [];
+    }
+
+    // Group deals by week
+    const weeklyGroups = brokerDeals.reduce((acc, deal) => {
+      if (!deal.latest_date) return acc;
+      
+      const dealDate = new Date(deal.latest_date);
+      if (isNaN(dealDate.getTime())) return acc;
+      
+      // Get week start (Monday)
+      const weekStart = new Date(dealDate);
+      const day = weekStart.getDay();
+      const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
+      weekStart.setDate(diff);
+      weekStart.setHours(0, 0, 0, 0);
+      
+      const weekKey = weekStart.toISOString().split('T')[0];
+      
+      if (!acc[weekKey]) {
+        acc[weekKey] = {
+          weekStart: weekStart,
+          deals: [],
+          totalDeals: 0,
+          settledDeals: 0,
+          convertedDeals: 0
+        };
+      }
+      
+      acc[weekKey].deals.push(deal);
+      acc[weekKey].totalDeals++;
+      
+      // Check if settled
+      if (deal["6. Settled"] && deal["6. Settled"].trim() !== "") {
+        acc[weekKey].settledDeals++;
+      }
+      
+      // Check if converted
+      const isConverted = (
+        (deal["1. Application"] && deal["1. Application"].trim() !== "") ||
+        (deal["2. Assessment"] && deal["2. Assessment"].trim() !== "") ||
+        (deal["3. Approval"] && deal["3. Approval"].trim() !== "") ||
+        (deal["4. Loan Document"] && deal["4. Loan Document"].trim() !== "") ||
+        (deal["5. Settlement Queue"] && deal["5. Settlement Queue"].trim() !== "") ||
+        (deal["6. Settled"] && deal["6. Settled"].trim() !== "") ||
+        (deal["2025 Settlement"] && deal["2025 Settlement"].trim() !== "") ||
+        (deal["2024 Settlement"] && deal["2024 Settlement"].trim() !== "")
+      );
+      
+      if (isConverted) {
+        acc[weekKey].convertedDeals++;
+      }
+      
+      return acc;
+    }, {} as Record<string, {
+      weekStart: Date,
+      deals: Deal[],
+      totalDeals: number,
+      settledDeals: number,
+      convertedDeals: number
+    }>);
+
+    // Group weeks by threshold categories and calculate averages
+    const weeklyData = Object.entries(weeklyGroups)
+      .map(([weekKey, data]) => {
+        const settledRate = data.totalDeals > 0 ? (data.settledDeals / data.totalDeals) * 100 : 0;
+        const conversionRate = data.totalDeals > 0 ? (data.convertedDeals / data.totalDeals) * 100 : 0;
+        const rate = selectedMode === 'settled' ? settledRate : conversionRate;
+        
+        return {
+          totalDeals: data.totalDeals,
+          rate: rate,
+          settledRate: settledRate,
+          conversionRate: conversionRate,
+          settledDeals: data.settledDeals,
+          convertedDeals: data.convertedDeals,
+          isAboveThreshold: data.totalDeals >= threshold
+        };
+      });
+
+    // Calculate averages for each category
+    const aboveThresholdWeeks = weeklyData.filter(w => w.isAboveThreshold);
+    const belowThresholdWeeks = weeklyData.filter(w => !w.isAboveThreshold);
+
+    const avgAboveThreshold = aboveThresholdWeeks.length > 0 
+      ? aboveThresholdWeeks.reduce((sum, w) => sum + w.rate, 0) / aboveThresholdWeeks.length 
+      : 0;
+    
+    const avgBelowThreshold = belowThresholdWeeks.length > 0 
+      ? belowThresholdWeeks.reduce((sum, w) => sum + w.rate, 0) / belowThresholdWeeks.length 
+      : 0;
+
+    // Create chart data with two categories, excluding zeros
+    const chartData = [];
+    
+    if (belowThresholdWeeks.length > 0) {
+      chartData.push({
+        category: `< ${threshold}`,
+        rate: parseFloat(avgBelowThreshold.toFixed(1)),
+        weekCount: belowThresholdWeeks.length,
+        totalDeals: belowThresholdWeeks.reduce((sum, w) => sum + w.totalDeals, 0),
+        avgSettledRate: belowThresholdWeeks.reduce((sum, w) => sum + w.settledRate, 0) / belowThresholdWeeks.length,
+        avgConversionRate: belowThresholdWeeks.reduce((sum, w) => sum + w.conversionRate, 0) / belowThresholdWeeks.length
+      });
+    }
+    
+    if (aboveThresholdWeeks.length > 0) {
+      chartData.push({
+        category: `>= ${threshold}`,
+        rate: parseFloat(avgAboveThreshold.toFixed(1)),
+        weekCount: aboveThresholdWeeks.length,
+        totalDeals: aboveThresholdWeeks.reduce((sum, w) => sum + w.totalDeals, 0),
+        avgSettledRate: aboveThresholdWeeks.reduce((sum, w) => sum + w.settledRate, 0) / aboveThresholdWeeks.length,
+        avgConversionRate: aboveThresholdWeeks.reduce((sum, w) => sum + w.conversionRate, 0) / aboveThresholdWeeks.length
+      });
+    }
+
+    return chartData;
+  }, [filteredDeals, selectedBroker, selectedMode, threshold]);
 
   const getPerformanceStatus = (broker: BrokerPerformance) => {
-    const settledMeetsThreshold = broker.settledRate >= settledRateThreshold;
-    const conversionMeetsThreshold = broker.conversionRate >= conversionRateThreshold;
+    const meetsThreshold = selectedMode === 'settled' 
+      ? broker.settledDeals >= threshold 
+      : broker.convertedDeals >= threshold;
     
-    if (settledMeetsThreshold && conversionMeetsThreshold) {
-      return { status: "excellent", color: "bg-green-100 text-green-800", icon: TrendingUp };
-    } else if (settledMeetsThreshold || conversionMeetsThreshold) {
-      return { status: "good", color: "bg-yellow-100 text-yellow-800", icon: Target };
+    if (meetsThreshold) {
+      return { status: "above-threshold", color: "bg-green-100 text-green-800", icon: TrendingUp };
     } else {
-      return { status: "needs-improvement", color: "bg-red-100 text-red-800", icon: AlertTriangle };
+      return { status: "below-threshold", color: "bg-red-100 text-red-800", icon: AlertTriangle };
     }
   };
 
@@ -387,64 +584,100 @@ export default function BrokerPerformanceAnalysisPage() {
           </Card>
         )}
         
-        {/* Threshold Controls */}
+        {/* Filter Controls */}
         <Card className="bg-white/90 border-violet/20 shadow-lg mb-6">
           <CardHeader>
             <CardTitle className="text-violet flex items-center gap-2">
-              <Target className="h-5 w-5" />
-              Performance Thresholds
+              <Filter className="h-5 w-5" />
+              Performance Analysis Filters
             </CardTitle>
-            <CardDescription>Set minimum performance standards to evaluate broker performance</CardDescription>
+            <CardDescription>Choose analysis mode, broker, year, and set performance threshold</CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div>
-              <Label htmlFor="settledRate">Settled Rate Threshold (%)</Label>
-              <Input
-                id="settledRate"
-                type="number"
-                value={settledRateThreshold}
-                onChange={(e) => setSettledRateThreshold(Number(e.target.value))}
-                className="mt-1"
-                min="0"
-                max="100"
-              />
+              <Label htmlFor="analysisMode" className="text-black">Analysis Mode</Label>
+              <Select value={selectedMode} onValueChange={(value) => setSelectedMode(value as 'settled' | 'conversion')}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="settled">Settled Analysis</SelectItem>
+                  <SelectItem value="conversion">Conversion Analysis</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
-              <Label htmlFor="conversionRate">Conversion Rate Threshold (%)</Label>
-              <Input
-                id="conversionRate"
-                type="number"
-                value={conversionRateThreshold}
-                onChange={(e) => setConversionRateThreshold(Number(e.target.value))}
-                className="mt-1"
-                min="0"
-                max="100"
-              />
+              <Label htmlFor="brokerFilter" className="text-black">Broker Name</Label>
+              <Select value={selectedBroker} onValueChange={setSelectedBroker}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select broker" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Brokers</SelectItem>
+                  {availableBrokers.map(broker => (
+                    <SelectItem key={broker} value={broker}>{broker}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
-              <Label htmlFor="minDeals">Minimum Deals Required</Label>
-              <Input
-                id="minDeals"
-                type="number"
-                value={minDealsThreshold}
-                onChange={(e) => setMinDealsThreshold(Number(e.target.value))}
-                className="mt-1"
-                min="1"
-              />
+              <Label htmlFor="yearFilter" className="text-black">Year</Label>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {availableYears.map(year => (
+                    <SelectItem key={year} value={year}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="threshold" className="text-black">
+                Deals
+              </Label>
+              <div className="flex items-center gap-3 mt-2">
+                <Slider
+                  id="threshold"
+                  min={0}
+                  max={60}
+                  step={1}
+                  value={[threshold]}
+                  onValueChange={(value) => setThreshold(value[0])}
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={60}
+                  value={threshold}
+                  onChange={(e) => {
+                    const value = Math.min(60, Math.max(0, Number(e.target.value) || 0));
+                    setThreshold(value);
+                  }}
+                  className="w-16 text-center"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <Card className="bg-white/90 border-violet/20 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-violet/80">Total Brokers</p>
-                  <p className="text-2xl font-bold text-violet">{performanceSummary.totalBrokers}</p>
+                  <p className="text-sm font-medium text-violet/80">
+                    {selectedBroker === 'all' ? 'Select a broker' : `${selectedBroker}'s ${selectedMode === 'settled' ? 'Settled' : 'Conversion'} Rate`}
+                  </p>
+                  <p className="text-2xl font-bold text-violet">
+                    {selectedBroker === 'all' ? '--' : `${performanceSummary.selectedBrokerRate.toFixed(1)}%`}
+                  </p>
                 </div>
-                <Users className="h-8 w-8 text-violet/50" />
+                <Target className="h-8 w-8 text-violet/50" />
               </div>
             </CardContent>
           </Card>
@@ -453,98 +686,72 @@ export default function BrokerPerformanceAnalysisPage() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-violet/80">Above Settled Threshold</p>
-                  <p className="text-2xl font-bold text-green-600">{performanceSummary.aboveSettledThreshold}</p>
+                  <p className="text-sm font-medium text-violet/80">
+                    {selectedBroker === 'all' ? 'Select a broker' : `${selectedBroker}'s Avg Deals per Week`}
+                  </p>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {selectedBroker === 'all' ? '--' : Math.round(performanceSummary.avgDealsPerWeek * 10) / 10}
+                  </p>
                 </div>
-                <TrendingUp className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white/90 border-violet/20 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-violet/80">Above Conversion Threshold</p>
-                  <p className="text-2xl font-bold text-blue-600">{performanceSummary.aboveConversionThreshold}</p>
-                </div>
-                <Target className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white/90 border-violet/20 shadow-sm">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-violet/80">Avg Settled Rate</p>
-                  <p className="text-2xl font-bold text-violet">{performanceSummary.avgSettledRate.toFixed(1)}%</p>
-                </div>
-                <DollarSign className="h-8 w-8 text-violet/50" />
+                <FileText className="h-8 w-8 text-blue-500" />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Broker Performance Table */}
-        <Card className="bg-white/90 border-violet/20 shadow-lg">
+        {/* Bar Chart */}
+        <Card className="bg-white/90 border-violet/20 shadow-lg mb-6">
           <CardHeader>
-            <CardTitle className="text-violet">Broker Performance Details</CardTitle>
+            <CardTitle className="text-violet flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Weekly Performance Analysis
+            </CardTitle>
             <CardDescription>
-              Detailed performance metrics for each broker (minimum {minDealsThreshold} deals required)
+              {selectedBroker === 'all' 
+                ? 'Select a specific broker to view weekly performance data'
+                : `${selectedBroker}'s ${selectedMode === 'settled' ? 'settled' : 'conversion'} rate by week, categorized by deal volume threshold`
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Broker Name</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
-                    <TableHead className="text-right">Total Deals</TableHead>
-                    <TableHead className="text-right">Settled Deals</TableHead>
-                    <TableHead className="text-right">Settled Rate</TableHead>
-                    <TableHead className="text-right">Conversion Rate</TableHead>
-                    <TableHead className="text-right">Settled Value</TableHead>
-                    <TableHead className="text-right">Avg Deal Value</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredBrokers.map((broker) => {
-                    const performance = getPerformanceStatus(broker);
-                    const StatusIcon = performance.icon;
-                    
-                    return (
-                      <TableRow key={broker.brokerName} className="hover:bg-violet/5">
-                        <TableCell className="font-medium">{broker.brokerName}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={performance.color}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {performance.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{broker.totalDeals}</TableCell>
-                        <TableCell className="text-right">{broker.settledDeals}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={broker.settledRate >= settledRateThreshold ? 'text-green-600 font-semibold' : 'text-red-600'}>
-                            {broker.settledRate.toFixed(1)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className={broker.conversionRate >= conversionRateThreshold ? 'text-green-600 font-semibold' : 'text-red-600'}>
-                            {broker.conversionRate.toFixed(1)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(broker.settledValue)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(broker.avgDealValue)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            {selectedBroker === 'all' || chartData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-violet/60">
+                <div className="text-center">
+                  <BarChart3 className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>{selectedBroker === 'all' ? 'Select a broker to view chart' : 'No data available for selected criteria'}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <XAxis 
+                      dataKey="category" 
+                      hide={true}
+                    />
+                    <YAxis 
+                      hide={true}
+                      domain={[0, 'dataMax + 10']}
+                    />
+                    <Bar 
+                      dataKey="rate"
+                      name={`Avg ${selectedMode === 'settled' ? 'Settled' : 'Conversion'} Rate (%)`}
+                      radius={[2, 2, 0, 0]}
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.category.includes('<') ? '#dc2626' : '#16a34a'} 
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </CardContent>
         </Card>
+
       </div>
     </div>
   );

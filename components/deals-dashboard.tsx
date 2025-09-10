@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -27,11 +27,14 @@ import {
   Home,
   Maximize,
   Minimize,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
   Info,
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { CalendarIcon, ChevronUp, ChevronDown } from "lucide-react"
 import { format } from "date-fns"
 import { WeeklyAnalysis } from "@/components/weekly-analysis"
@@ -385,7 +388,7 @@ function InteractiveTreemap({ deals, width = 800, height = 500 }: { deals: Deal[
   );
 }
 
-function PieChart({ data = [], size = 200, legendTextColor = "text-deep-purple-text", onLegendClick, selectedLabel }: { data?: Array<{ label: string; value: number; color: string; conversionRate?: string; settleRate?: string }>; size?: number; legendTextColor?: string; onLegendClick?: (label: string) => void; selectedLabel?: string | null }) {
+function PieChart({ data = [], size = 200, legendTextColor = "text-deep-purple-text", onLegendClick, selectedLabel }: { data?: Array<{ label: string; value: number; color: string; conversionRate?: string; settleRate?: string; convertedCount?: number; settledCount?: number }>; size?: number; legendTextColor?: string; onLegendClick?: (label: string) => void; selectedLabel?: string | null }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (total === 0) return <div className="flex items-center justify-center" style={{ width: size, height: size }}><span className="text-deep-purple-text/70">No data</span></div>;
   let cumulativePercentage = 0;
@@ -420,7 +423,7 @@ function PieChart({ data = [], size = 200, legendTextColor = "text-deep-purple-t
               <span className={legendTextColor}>{item.label}: {item.value} ({((item.value / total) * 100).toFixed(1)}%)</span>
               {item.conversionRate && item.settleRate && (
                 <span className={`text-xs ${legendTextColor} opacity-70`}>
-                  Conv: {item.conversionRate}% | Settle: {item.settleRate}%
+                  Conv: {item.conversionRate}% ({item.convertedCount} deals) | Settle: {item.settleRate}% ({item.settledCount} deals)
                 </span>
               )}
             </div>
@@ -649,6 +652,7 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
               <TableHead>Settled Deals</TableHead>
               <TableHead>Settled Rate</TableHead>
               <TableHead>Total Value Settled</TableHead>
+              <TableHead>Lost Deals</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -662,6 +666,7 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
                   <TableCell className="font-bold text-deep-purple-text">{broker.settled}</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{broker.settledRate}%</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{formatCurrency(broker.value)}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.lost}</TableCell>
                 </TableRow>
                 {showSourceBreakdown && broker.sourceBreakdown && broker.sourceBreakdown.map((source) => (
                   <TableRow key={`${broker.name}-${source.source}`} className="bg-gray-50/50">
@@ -672,6 +677,7 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
                     <TableCell className="text-sm text-deep-purple-text/80">{source.settled}</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{source.settledRate}%</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{formatCurrency(source.value)}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.lost}</TableCell>
                   </TableRow>
                 ))}
               </React.Fragment>
@@ -689,6 +695,7 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
   const [showLostDeals, setShowLostDeals] = useState(false);
   const [sortColumns, setSortColumns] = useState<Array<{ field: string; direction: "asc" | "desc" }>>([]);
   const [selectedLostReason, setSelectedLostReason] = useState<string | null>(null);
+  const lostDealsScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (showLostDeals) {
@@ -699,6 +706,22 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
     
     return () => {
       document.body.style.overflow = 'unset';
+    };
+  }, [showLostDeals]);
+
+  // Handle ESC key to close Lost Deals modal
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showLostDeals) {
+        setShowLostDeals(false);
+        setSelectedLostReason(null);
+        setSortColumns([]);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [showLostDeals]);
 
@@ -1032,7 +1055,7 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
                 </div>
                 <button onClick={() => { setShowLostDeals(false); setSelectedLostReason(null); setSortColumns([]); }} className="text-gray-400 hover:text-gray-600 text-2xl">×</button>
               </div>
-              <div className="p-6 overflow-y-auto h-[calc(90vh-120px)]">
+              <div ref={lostDealsScrollRef} className="p-6 overflow-y-auto h-[calc(90vh-120px)]">
                 <div className="grid gap-6 lg:grid-cols-4">
                   <div className="lg:col-span-1">
                     <Card>
@@ -1047,7 +1070,13 @@ function SankeyDiagram({ deals, startDate, endDate }: { deals: Deal[]; startDate
                               data={lostReasonsData} 
                               size={250} 
                               legendTextColor="text-white" 
-                              onLegendClick={(label) => setSelectedLostReason(label || null)} 
+                              onLegendClick={(label) => {
+                                setSelectedLostReason(label || null);
+                                // Scroll to top of the modal content
+                                if (lostDealsScrollRef.current) {
+                                  lostDealsScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                                }
+                              }} 
                               selectedLabel={selectedLostReason} 
                             />
                           </div>
@@ -1134,6 +1163,51 @@ export function DealsDashboard() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // Helper functions for week navigation
+  const getWeekStart = (date: Date): string => {
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    const monday = new Date(date.setDate(diff));
+    return monday.toISOString().split('T')[0];
+  };
+
+  const getWeekEnd = (date: Date): string => {
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? 0 : 7); // Adjust when day is Sunday
+    const sunday = new Date(date.setDate(diff));
+    return sunday.toISOString().split('T')[0];
+  };
+
+  const getCurrentWeekRange = (): { start: string; end: string } => {
+    const now = new Date();
+    return {
+      start: getWeekStart(new Date(now)),
+      end: getWeekEnd(new Date(now))
+    };
+  };
+
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    if (!startDate || !endDate) {
+      // If no current range, set to current week
+      const currentWeek = getCurrentWeekRange();
+      setStartDate(currentWeek.start);
+      setEndDate(currentWeek.end);
+      return;
+    }
+
+    const currentStart = new Date(startDate);
+    const offset = direction === 'prev' ? -7 : 7;
+    
+    const newStart = new Date(currentStart);
+    newStart.setDate(currentStart.getDate() + offset);
+    
+    const newEnd = new Date(newStart);
+    newEnd.setDate(newStart.getDate() + 6);
+
+    setStartDate(newStart.toISOString().split('T')[0]);
+    setEndDate(newEnd.toISOString().split('T')[0]);
+  };
   const [sortColumns, setSortColumns] = useState<Array<{ field: SortField; direction: SortDirection }>>([
     { field: "broker_name", direction: "asc" },
     { field: "status", direction: "asc" },
@@ -1144,14 +1218,39 @@ export function DealsDashboard() {
   
   const { isFullscreen, isSupported, toggleFullscreen } = useFullscreen();
 
-  // Initial loading animation
+  // Load data from sessionStorage on component mount
   useEffect(() => {
+    const loadStoredData = () => {
+      try {
+        const storedDeals = sessionStorage.getItem('dashboard-deals-data');
+        if (storedDeals) {
+          const parsedDeals = JSON.parse(storedDeals);
+          setDeals(parsedDeals);
+        }
+      } catch (error) {
+        console.error('Failed to load stored deals:', error);
+      }
+    };
+
+    loadStoredData();
+    
     const timer = setTimeout(() => {
       setIsLoading(false);
     }, 2000); // Show loading animation for 2 seconds on initial load
     
     return () => clearTimeout(timer);
   }, []);
+
+  // Save data to sessionStorage whenever deals change
+  useEffect(() => {
+    if (deals.length > 0) {
+      try {
+        sessionStorage.setItem('dashboard-deals-data', JSON.stringify(deals));
+      } catch (error) {
+        console.error('Failed to save deals to sessionStorage:', error);
+      }
+    }
+  }, [deals]);
 
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return; setIsLoading(true); setError(null);
@@ -1177,7 +1276,11 @@ export function DealsDashboard() {
         }).filter((deal) => deal.deal_name && deal.deal_name.trim() !== "");
         setDeals(dealsArray); setError(null);
       } else throw new Error("Unsupported file format. Please upload a JSON or Excel (.xlsx/.xls) file.");
-    } catch (err) { setError(err instanceof Error ? err.message : "Failed to parse file"); setDeals([]) }
+    } catch (err) { 
+      setError(err instanceof Error ? err.message : "Failed to parse file"); 
+      setDeals([]);
+      sessionStorage.removeItem('dashboard-deals-data');
+    }
     finally { setIsLoading(false) }
   }, []);
 
@@ -1420,7 +1523,7 @@ export function DealsDashboard() {
 
   const brokers = useMemo(() => {
     const brokerStats = filteredDeals.reduce((acc, deal) => { 
-      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0 }; 
+      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0, lost: 0 }; 
       acc[deal.broker_name].total++; 
       
       // Check if deal is converted (has entered any processing stage)
@@ -1437,12 +1540,17 @@ export function DealsDashboard() {
         acc[deal.broker_name].converted++;
       }
       
+      // Check if deal is lost
+      if (deal.status === "Lost") {
+        acc[deal.broker_name].lost++;
+      }
+      
       if (deal["6. Settled"] && deal["6. Settled"].trim() !== "") { 
         acc[deal.broker_name].settled++; 
         acc[deal.broker_name].value += deal.deal_value || 0;
       } 
       return acc;
-    }, {} as Record<string, { total: number; settled: number; value: number; converted: number }>);
+    }, {} as Record<string, { total: number; settled: number; value: number; converted: number; lost: number }>);
     
     return Object.entries(brokerStats).map(([name, stats]) => {
       // Calculate source breakdown for this broker
@@ -1474,6 +1582,7 @@ export function DealsDashboard() {
           (d["2025 Settlement"] && d["2025 Settlement"].trim() !== "") ||
           (d["2024 Settlement"] && d["2024 Settlement"].trim() !== "")
         ).length;
+        const lost = sourceData.deals.filter(d => d.status === "Lost").length;
         const value = sourceData.deals.filter(d => d["6. Settled"] && d["6. Settled"].trim() !== "")
           .reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
         
@@ -1482,6 +1591,7 @@ export function DealsDashboard() {
           total,
           converted,
           conversionRate: total > 0 ? ((converted / total) * 100).toFixed(1) : "0",
+          lost,
           settled,
           settledRate: total > 0 ? ((settled / total) * 100).toFixed(1) : "0",
           value
@@ -2108,7 +2218,11 @@ export function DealsDashboard() {
           )}
           <Button 
             variant="outline" 
-            onClick={() => { setDeals([]); setError(null) }} 
+            onClick={() => { 
+              setDeals([]); 
+              setError(null);
+              sessionStorage.removeItem('dashboard-deals-data');
+            }} 
             className="bg-gradient-to-r from-hot-pink to-violet text-white border-0 hover:from-violet hover:to-hot-pink transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
           >
             <Upload className="h-4 w-4 mr-2" />
@@ -2120,17 +2234,41 @@ export function DealsDashboard() {
       <div className="relative z-40 container mx-auto p-8 space-y-8">
         <Card className="bg-white/95 backdrop-blur-xl border-0 shadow-2xl shadow-violet/10 ring-1 ring-violet/20">
           <CardHeader className="pb-6">
-            <CardTitle className="flex items-center gap-3 text-2xl font-bold">
-              <div className="p-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg">
-                <Filter className="h-5 w-5 text-white" />
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-3 text-2xl font-bold">
+                  <div className="p-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg">
+                    <Filter className="h-5 w-5 text-white" />
+                  </div>
+                  <span className="text-gray-800 font-black">
+                    Time Filters
+                  </span>
+                </CardTitle>
+                <CardDescription className="text-gray-600 text-base font-medium">
+                  Filter your deals data by date range to focus on specific time periods
+                </CardDescription>
               </div>
-              <span className="text-gray-800 font-black">
-                Time Filters
-              </span>
-            </CardTitle>
-            <CardDescription className="text-gray-600 text-base font-medium">
-              Filter your deals data by date range to focus on specific time periods
-            </CardDescription>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => navigateWeek('prev')}
+                  className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all duration-200 font-semibold"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous Week
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => navigateWeek('next')}
+                  className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all duration-200 font-semibold"
+                >
+                  Next Week
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -2150,7 +2288,7 @@ export function DealsDashboard() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
+                    <CalendarComponent
                       mode="single"
                       selected={startDate ? new Date(startDate) : undefined}
                       onSelect={(date) => setStartDate(date ? format(date, "yyyy-MM-dd") : "")}
@@ -2175,7 +2313,7 @@ export function DealsDashboard() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
+                    <CalendarComponent
                       mode="single"
                       selected={endDate ? new Date(endDate) : undefined}
                       onSelect={(date) => setEndDate(date ? format(date, "yyyy-MM-dd") : "")}
