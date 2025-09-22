@@ -667,7 +667,12 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
                   <TableCell className="font-bold text-deep-purple-text">{broker.settled}</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{broker.settledRate}%</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{formatCurrency(broker.value)}</TableCell>
-                  <TableCell className="font-bold text-deep-purple-text">{broker.inProgress}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">
+                    {broker.inProgress}
+                    {broker.inProgressConverted > 0 && (
+                      <span className="ml-1">({broker.inProgressConverted})</span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{broker.lost}</TableCell>
                 </TableRow>
                 {showSourceBreakdown && broker.sourceBreakdown && broker.sourceBreakdown.map((source) => (
@@ -679,7 +684,12 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
                     <TableCell className="text-sm text-deep-purple-text/80">{source.settled}</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{source.settledRate}%</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{formatCurrency(source.value)}</TableCell>
-                    <TableCell className="text-sm text-deep-purple-text/80">{source.inProgress}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">
+                      {source.inProgress}
+                      {source.inProgressConverted > 0 && (
+                        <span className="ml-1">({source.inProgressConverted})</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{source.lost}</TableCell>
                   </TableRow>
                 ))}
@@ -1525,10 +1535,10 @@ export function DealsDashboard() {
   }, [filteredDealsForKPI]);
 
   const brokers = useMemo(() => {
-    const brokerStats = filteredDeals.reduce((acc, deal) => { 
-      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0, lost: 0, inProgress: 0 }; 
-      acc[deal.broker_name].total++; 
-      
+    const brokerStats = filteredDeals.reduce((acc, deal) => {
+      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0, lost: 0, inProgress: 0, inProgressConverted: 0 };
+      acc[deal.broker_name].total++;
+
       // Check if deal is converted (has entered any processing stage)
       const isConverted = (deal["1. Application"] && deal["1. Application"].trim() !== "") ||
         (deal["2. Assessment"] && deal["2. Assessment"].trim() !== "") ||
@@ -1538,22 +1548,31 @@ export function DealsDashboard() {
         (deal["6. Settled"] && deal["6. Settled"].trim() !== "") ||
         (deal["2025 Settlement"] && deal["2025 Settlement"].trim() !== "") ||
         (deal["2024 Settlement"] && deal["2024 Settlement"].trim() !== "");
-      
+
       if (isConverted) {
         acc[deal.broker_name].converted++;
       }
-      
+
       // Check if deal is lost
-      if (deal.status === "Lost") {
+      const isSettled = deal["6. Settled"] && deal["6. Settled"].trim() !== "";
+      const isLost = deal.status === "Lost";
+
+      if (isLost) {
         acc[deal.broker_name].lost++;
+      } else if (!isSettled) {
+        // Deal is in progress (not lost and not settled)
+        acc[deal.broker_name].inProgress++;
+        if (isConverted) {
+          acc[deal.broker_name].inProgressConverted++;
+        }
       }
-      
-      if (deal["6. Settled"] && deal["6. Settled"].trim() !== "") { 
-        acc[deal.broker_name].settled++; 
+
+      if (isSettled) {
+        acc[deal.broker_name].settled++;
         acc[deal.broker_name].value += deal.deal_value || 0;
-      } 
+      }
       return acc;
-    }, {} as Record<string, { total: number; settled: number; value: number; converted: number; lost: number; inProgress: number }>);
+    }, {} as Record<string, { total: number; settled: number; value: number; converted: number; lost: number; inProgress: number; inProgressConverted: number }>);
     
     return Object.entries(brokerStats).map(([name, stats]) => {
       // Calculate source breakdown for this broker
@@ -1588,7 +1607,19 @@ export function DealsDashboard() {
         const lost = sourceData.deals.filter(d => d.status === "Lost").length;
         const value = sourceData.deals.filter(d => d["6. Settled"] && d["6. Settled"].trim() !== "")
           .reduce((sum, deal) => sum + (deal.deal_value || 0), 0);
-        
+        const inProgress = total - settled - lost;
+        const inProgressDeals = sourceData.deals.filter(d =>
+          d.status !== "Lost" && !(d["6. Settled"] && d["6. Settled"].trim() !== ""));
+        const inProgressConverted = inProgressDeals.filter(d =>
+          (d["1. Application"] && d["1. Application"].trim() !== "") ||
+          (d["2. Assessment"] && d["2. Assessment"].trim() !== "") ||
+          (d["3. Approval"] && d["3. Approval"].trim() !== "") ||
+          (d["4. Loan Document"] && d["4. Loan Document"].trim() !== "") ||
+          (d["5. Settlement Queue"] && d["5. Settlement Queue"].trim() !== "") ||
+          (d["2025 Settlement"] && d["2025 Settlement"].trim() !== "") ||
+          (d["2024 Settlement"] && d["2024 Settlement"].trim() !== "")
+        ).length;
+
         return {
           source: sourceData.source,
           total,
@@ -1598,14 +1629,14 @@ export function DealsDashboard() {
           settled,
           settledRate: total > 0 ? ((settled / total) * 100).toFixed(1) : "0",
           value,
-          inProgress: total - settled - lost
+          inProgress,
+          inProgressConverted
         };
       }).filter(s => s.total > 0); // Only include sources with deals
       
       return {
         name,
         ...stats,
-        inProgress: stats.total - stats.settled - stats.lost,
         conversionRate: stats.total > 0 ? ((stats.converted / stats.total) * 100).toFixed(1) : "0",
         settledRate: stats.total > 0 ? ((stats.settled / stats.total) * 100).toFixed(1) : "0",
         sourceBreakdown
