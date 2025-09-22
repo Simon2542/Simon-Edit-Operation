@@ -652,6 +652,7 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
               <TableHead>Settled Deals</TableHead>
               <TableHead>Settled Rate</TableHead>
               <TableHead>Total Value Settled</TableHead>
+              <TableHead>In Progress</TableHead>
               <TableHead>Lost Deals</TableHead>
             </TableRow>
           </TableHeader>
@@ -666,6 +667,7 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
                   <TableCell className="font-bold text-deep-purple-text">{broker.settled}</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{broker.settledRate}%</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{formatCurrency(broker.value)}</TableCell>
+                  <TableCell className="font-bold text-deep-purple-text">{broker.inProgress}</TableCell>
                   <TableCell className="font-bold text-deep-purple-text">{broker.lost}</TableCell>
                 </TableRow>
                 {showSourceBreakdown && broker.sourceBreakdown && broker.sourceBreakdown.map((source) => (
@@ -677,6 +679,7 @@ function BrokerPerformanceTable({ brokers }: { brokers: Array<{
                     <TableCell className="text-sm text-deep-purple-text/80">{source.settled}</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{source.settledRate}%</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{formatCurrency(source.value)}</TableCell>
+                    <TableCell className="text-sm text-deep-purple-text/80">{source.inProgress}</TableCell>
                     <TableCell className="text-sm text-deep-purple-text/80">{source.lost}</TableCell>
                   </TableRow>
                 ))}
@@ -1523,7 +1526,7 @@ export function DealsDashboard() {
 
   const brokers = useMemo(() => {
     const brokerStats = filteredDeals.reduce((acc, deal) => { 
-      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0, lost: 0 }; 
+      if (!acc[deal.broker_name]) acc[deal.broker_name] = { total: 0, settled: 0, value: 0, converted: 0, lost: 0, inProgress: 0 }; 
       acc[deal.broker_name].total++; 
       
       // Check if deal is converted (has entered any processing stage)
@@ -1550,7 +1553,7 @@ export function DealsDashboard() {
         acc[deal.broker_name].value += deal.deal_value || 0;
       } 
       return acc;
-    }, {} as Record<string, { total: number; settled: number; value: number; converted: number; lost: number }>);
+    }, {} as Record<string, { total: number; settled: number; value: number; converted: number; lost: number; inProgress: number }>);
     
     return Object.entries(brokerStats).map(([name, stats]) => {
       // Calculate source breakdown for this broker
@@ -1594,13 +1597,15 @@ export function DealsDashboard() {
           lost,
           settled,
           settledRate: total > 0 ? ((settled / total) * 100).toFixed(1) : "0",
-          value
+          value,
+          inProgress: total - settled - lost
         };
       }).filter(s => s.total > 0); // Only include sources with deals
       
-      return { 
-        name, 
-        ...stats, 
+      return {
+        name,
+        ...stats,
+        inProgress: stats.total - stats.settled - stats.lost,
         conversionRate: stats.total > 0 ? ((stats.converted / stats.total) * 100).toFixed(1) : "0",
         settledRate: stats.total > 0 ? ((stats.settled / stats.total) * 100).toFixed(1) : "0",
         sourceBreakdown
