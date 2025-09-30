@@ -2230,17 +2230,6 @@ export function DealsDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/other-information">
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-white/60 border-violet/30 text-violet hover:bg-violet hover:text-white transition-all duration-300 shadow-sm hover:shadow-lg backdrop-blur-sm"
-              title="Information Hub"
-            >
-              <Info className="h-4 w-4 mr-2" />
-              Information Hub
-            </Button>
-          </Link>
           {isSupported && (
             <Button
               variant="outline"
